@@ -1,0 +1,31 @@
+syntax = "proto2";
+
+message ImageResizer {
+  oneof image_resizer_oneof {
+    DefaultResizer default_resizer = 1;
+    FixedShapeResizer fixed_shape_resizer = 2;
+    KeepAspectRatioResizer keep_aspect_ratio_resizer = 3;
+    RandomScaleResizer random_scale_resizer = 4;
+  }
+}
+
+message DefaultResizer {
+}
+
+message FixedShapeResizer {
+  // Desired height of image in pixels.
+  optional int32 height = 1 [default = 300];
+
+  // Desired width of image in pixels.
+  optional int32 width = 2 [default = 300];
+}
+
+message KeepAspectRatioResizer {
+  // Desired size of the smaller image dimension in pixels.
+  optional int32 min_dimension = 3 [default = 600];
+}
+
+message RandomScaleResizer {
+  // Desired size of the larger image dimension in pixels.
+  repeated int32 max_dimension = 1;
+}

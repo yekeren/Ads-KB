@@ -1,0 +1,66 @@
+syntax = "proto2";
+
+import "protos/model.proto";
+import "protos/hyperparams.proto";
+import "protos/graph_creator.proto";
+import "protos/sequence_encoder.proto";
+
+message ReasoningModel {
+  extend Model {
+    optional ReasoningModel ext = 3459;
+  }
+  
+  // Hyper-parameters of the fully-connected layers.
+  optional Hyperparams hyperparams = 1;
+
+  // Shared dimensions.
+  optional int32 shared_dims = 2 [default = 50];
+
+  // Word embedding dimension.
+  optional int32 embedding_dims = 3 [default = 50];
+
+  // If true, also train word embeddings.
+  optional bool train_word_embedding= 4 [default = true];
+  
+  // If set, clip the l2-norm of word_embedding to this value.
+  optional float word_embedding_max_norm = 5;
+
+  // If true, add a linear projection layer on the word embedding layer.
+  optional bool project_word_embedding = 6 [default = false];
+
+  // Path to the GloVe file.
+  optional string glove_path = 7;
+
+  // If true, use a shared vocabulary.
+  optional bool shared_vocab = 8 [default = false];
+
+  // If true, use shared encoding for the LSTM or BiLSTM.
+  optional bool shared_encoding = 9 [default = false];
+
+  // Slogan vocab file.
+  optional string slgn_vocab_list_path = 10;
+
+  // Slogan-kb vocab file.
+  optional string slgn_kb_vocab_list_path = 11;
+
+  // Statement vocab file.
+  optional string stmt_vocab_list_path = 12;
+
+  // If set, use the text encoder instead of average pooling.
+  optional SequenceEncoder text_encoder = 13;
+
+  // Margin of triplet loss.
+  optional float triplet_margin = 21 [default = 0.2];
+
+  // If true, use reduce_mean to aggregate the distance between anchor and positive example.
+  optional bool triplet_ap_use_avg = 22 [default = false];
+
+  // Graph creator config.
+  optional GraphCreator graph_creator = 31;
+
+  // Dropout keep probability of the dot-product.
+  optional float dot_product_dropout_keep_prob = 32 [default = 1.0];
+
+  // Dropout keep probability of the dbpedia representation.
+  optional float dbpedia_repr_dropout_keep_prob = 33 [default = 1.0];
+}

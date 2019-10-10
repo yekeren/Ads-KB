@@ -1,0 +1,37 @@
+syntax = "proto2";
+import "protos/hyperparams.proto";
+
+message SequenceEncoder {
+  oneof sequence_encoder_oneof {
+    AvgPoolingEncoder avg_pooling_encoder = 1;
+    LSTMEncoder lstm_encoder = 2;
+    LSTMEncoder bilstm_encoder = 3;
+    AttnPoolingEncoder attn_pooling_encoder = 4;
+    MLPEncoder mlp_encoder = 5;
+  }
+}
+
+message AvgPoolingEncoder {
+  optional Hyperparams hyperparams = 2;
+}
+
+message AttnPoolingEncoder {
+  optional Hyperparams hyperparams = 2;
+  optional int32 hidden_layers = 3 [default = 0];
+}
+
+message MLPEncoder {
+  optional Hyperparams hyperparams = 1;
+
+  optional int32 number_of_hidden_layers = 2 [default = 0];
+}
+
+message LSTMEncoder {
+  optional int32 hidden_units = 1 [default = 300];
+  optional int32 number_of_layers = 2 [default = 1];
+  optional int32 parallel_iterations = 3 [default = 16];
+  optional float input_keep_prob = 4 [default = 1.0];
+  optional float output_keep_prob = 5 [default = 1.0];
+  optional float state_keep_prob = 6 [default = 1.0];
+  optional int32 output_units = 7;
+}

@@ -1,0 +1,98 @@
+syntax = "proto2";
+
+import "protos/model.proto";
+import "protos/hyperparams.proto";
+import "protos/sequence_encoder.proto";
+
+enum SentinelInitEmb {
+  ZERO = 1;
+  AVG_ALL = 2;
+}
+
+enum NormalizationMethod {
+  SOFTMAX = 1;
+  TANH = 2;
+  SIGMOID = 3;
+  SOFTMAX_R = 4;
+  HARDMAX = 5;
+}
+
+message MatchGCNModel {
+  extend Model {
+    optional MatchGCNModel ext = 3458;
+  }
+
+  // Hyper-parameters of the fully-connected layers.
+  optional Hyperparams hyperparams = 29;
+
+  // Path to the GloVe file.
+  optional string glove_path = 3;
+
+  // If true, use a shared vocabulary.
+  optional bool shared_vocab = 10 [default = false];
+  
+  // If set, clip the l2-norm of word_embedding to this value.
+  optional float word_embedding_max_norm = 90;
+
+  // Slogan vocab file.
+  optional string slgn_vocab_list_path = 4;
+
+  // Slogan-kb vocab file.
+  optional string slgn_kb_vocab_list_path = 5;
+
+  // Statement vocab file.
+  optional string stmt_vocab_list_path = 6;
+
+  // If set, use the text encoder instead of average pooling.
+  optional SequenceEncoder text_encoder = 77;
+
+  // Number of hidden layers for predicting edge weights.
+  optional int32 edge_mlp_hidden_layers = 87 [default = 1];
+
+  // Number of hidden units for predicting edge weights.
+  optional int32 edge_mlp_hidden_units = 88 [default = 50];
+
+  // Dropout keep probability for predicting edge weights.
+  optional float edge_mlp_dropout_keep_prob = 89 [default = 0.5];
+
+  // If true, use identity feature.
+  optional bool edge_use_identity_feature = 99 [default = false];
+
+  // Initial embedding of sentinel node.
+  optional SentinelInitEmb sentinel_init_emb = 33 [default = ZERO];
+
+  // Number of GCN layers.
+  optional int32 gcn_layers = 27 [default = 0];
+
+  // If true, also learn GCN weights.
+  optional bool gcn_learn_weights = 28 [default = false];
+
+  // Margin of triplet loss.
+  optional float triplet_margin = 24 [default = 0.2];
+
+  // If true, use reduce_mean to aggregate the distance between anchor and positive example.
+  optional bool triplet_ap_use_avg = 25 [default = false];
+
+  optional NormalizationMethod normalization_method = 34 [default = SOFTMAX];
+
+  optional float graph_sparse_loss_weight = 56 [default = 0.0];
+  optional float graph_entropy_loss_weight = 57 [default = 0.0];
+
+  optional bool batch_norm_text = 101 [default = false];
+
+  optional string kb_query_to_id_file = 102 [default = 'sparql_query2id.txt'];
+  optional string kb_id_to_comment_file = 103 [default = 'sparql_id2comment.txt'];
+
+  optional bool train_word_embedding= 104 [default = true];
+
+  optional bool project_word_embedding = 105 [default = false];
+  optional bool project_use_relu = 106 [default = false];
+
+  optional bool image_use_tanh = 107 [default = false];
+
+  optional bool use_dbpedia_knowledge = 108 [default = true];
+
+  optional bool shared_encoding = 109 [default = false];
+
+  optional bool use_context = 110 [default = false];
+}

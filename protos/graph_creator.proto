@@ -1,0 +1,86 @@
+syntax = "proto2";
+
+message GraphCreator {
+  oneof graph_creator_oneof {
+    HierarchicalGraphCreator hierarchical_graph_creator = 4;
+    ConvGraphCreator conv_graph_creator = 5;
+  }
+}
+
+message EdgeMLP {
+  // Number of hidden layers.
+  optional int32 hidden_layers = 1 [default = 1];
+
+  // Number of hidden units.
+  optional int32 hidden_units = 2 [default = 50];
+
+  // Dropout keep probability.
+  optional float dropout_keep_prob = 3 [default = 0.5];
+}
+
+message ConvGraphCreator {
+
+  // Hyper parameters for the edge-weights MLP.
+  optional EdgeMLP edge_mlp_options = 1;
+
+  // Number of gcn layers to use.
+  optional int32 gcn_layers = 6 [default = 2];
+
+  // Feature indicator to be used.
+  enum FeatureIndicator {
+    ONLY_PROPOSAL = 1;
+    ONLY_SLOGAN = 2;
+    PROPOSAL_AND_SLOGAN = 3;
+    ALL = 4;
+  }
+  optional FeatureIndicator feature_indicator = 9 [default = ALL];
+
+  // Attention type to be used.
+  enum AttentionType {
+    SELF_ATTENTION = 1;
+    CO_ATTENTION = 2;
+  }
+  optional AttentionType attention_type = 11 [default = CO_ATTENTION];
+
+  // If true, connect the proposals and slogans in both direction.
+  optional bool connect_proposal_and_slogan = 12 [default = false];
+
+  // Probability to keep an edge in the graph during training.
+  optional float graph_connection_dropout_keep_prob = 13 [default = 1.0];
+}
+
+message HierarchicalGraphCreator {
+
+  // Hyper parameters for the edge-weights MLP.
+  optional EdgeMLP edge_mlp_options = 1;
+
+  // Number of gcn layers to use.
+  optional int32 gcn_layers = 6 [default = 2];
+
+  // Feature indicator to be used.
+  enum FeatureIndicator {
+    ONLY_PROPOSAL = 1;
+    ONLY_SLOGAN = 2;
+    PROPOSAL_AND_SLOGAN = 3;
+    ALL = 4;
+  }
+  optional FeatureIndicator feature_indicator = 9 [default = ALL];
+
+  // Attention type to be used.
+  enum AttentionType {
+    SELF_ATTENTION = 1;
+    CO_ATTENTION = 2;
+  }
+  optional AttentionType attention_type = 11 [default = CO_ATTENTION];
+
+  // If true, connect the proposals and slogans in both direction.
+  optional bool connect_proposal_and_slogan = 12 [default = false];
+
+  // Probability to keep an edge in the graph during training.
+  optional float graph_connection_dropout_keep_prob = 13 [default = 1.0];
+
+  optional float sparse_loss_weight = 14 [default = 0.0];
+
+  optional float graph_slogan_keep_prob = 16 [default = 1.0];
+  optional float graph_dbpedia_to_slogan_keep_prob = 17 [default = 1.0];
+}
