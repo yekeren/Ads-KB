@@ -5,8 +5,9 @@ from __future__ import print_function
 import tensorflow as tf
 
 from protos import reader_pb2
-from reader import wsod_reader
-from reader import advise_reader
+from readers import wsod_reader
+from readers import advise_reader
+from readers import ads_reader
 
 
 def get_input_fn(options):
@@ -23,10 +24,7 @@ def get_input_fn(options):
 
   reader_oneof = options.WhichOneof('reader_oneof')
 
-  if 'wsod_reader' == reader_oneof:
-    return wsod_reader.get_input_fn(options.wsod_reader)
-
-  if 'advise_reader' == reader_oneof:
-    return advise_reader.get_input_fn(options.advise_reader)
+  if 'ads_reader' == reader_oneof:
+    return ads_reader.get_input_fn(options.ads_reader)
 
   raise ValueError('Invalid reader %s' % (reader_oneof))

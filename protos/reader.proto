@@ -5,12 +5,28 @@ import "protos/image_resizer.proto";
 
 message Reader {
   oneof reader_oneof {
-    WSODReader wsod_reader = 1;
-    AdViSEReader advise_reader = 2;
+    AdsReader ads_reader = 1;
   }
 }
 
-message AdViSEReader {
+message KnowledgeBase {
+  // Path to the query-to-id file.
+  optional string query_to_id_file = 1;
+
+  // Path to the id-to-comment file.
+  optional string id_to_comment_file = 2;
+
+  // Maximum number of comments per image.
+  optional int32 max_comments_per_image = 3 [default = 20];
+
+  // Maximum number of tokens of a comment.
+  optional int32 max_tokens_to_keep = 4 [default = 30];
+
+  // If true, remove query word from the comment.
+  optional bool remove_query = 5 [default = false];
+}
+
+message AdsReader {
   // Pattern of the input files.
   repeated string input_pattern = 1;
 
@@ -18,105 +34,40 @@ message AdViSEReader {
   optional int32 interleave_cycle_length = 2 [default = 2];
 
   // If True, repeat the dataset and shuffle the batch.
-  optional bool is_training = 4 [default = false];
+  optional bool is_training = 3 [default = false];
 
   // Shuffle buffer size.
-  optional int32 shuffle_buffer_size = 5 [default = 1000];
+  optional int32 shuffle_buffer_size = 4 [default = 1000];
 
   // Number of parallel calls.
-  optional int32 map_num_parallel_calls = 6 [default = 1];
+  optional int32 map_num_parallel_calls = 5 [default = 1];
 
   // Prefetch buffer size.
-  optional int32 prefetch_buffer_size = 7 [default = 200];
+  optional int32 prefetch_buffer_size = 6 [default = 200];
 
   // Batch size.
-  optional int32 batch_size = 8 [default = 32];
+  optional int32 batch_size = 7 [default = 32];
 
   // Feature dimensions.
-  optional int32 feature_dimensions = 9 [default = 1536];
+  optional int32 feature_dimensions = 8 [default = 1536];
 
-  // Symbol dimensions.
-  optional int32 symbol_dimensions = 10 [default = 54];
+  // Maximum number of slogans.
+  optional int32 max_slogan_num = 11 [default = 10];
 
-  // See core.standard_fields.TFOpertions.decode_*.
-  repeated string decode_annotation = 11;
+  // Maximum length of slogans.
+  optional int32 max_slogan_len = 12 [default = 100];
 
-  // Maximum number of texts.
-  optional int32 max_num_texts = 12 [default = 30];
+  // Maxmum number of statements.
+  optional int32 max_statement_num = 13 [default = 30];
 
-  // Maximum text length.
-  optional int32 max_text_length = 13 [default = 100];
+  // Maximum length of statements.
+  optional int32 max_statement_len = 14 [default = 100];
 
-  // Maximum statement length.
-  optional int32 max_stmt_length = 14 [default = 100];
+  // Config of the knowledge base.
+  optional KnowledgeBase knowledge_base_config = 21;
 
   // If set to 'MEMORY', cache to the memory.
-  optional string cache = 15 [default = 'MEMORY'];
-
-  optional string knowledge_query_to_id_file = 16;
-
-  optional string knowledge_id_to_comment_file = 17;
-
-  optional int32 knowledge_max_comments_per_image = 18 [default = 10];
-
-  optional int32 knowledge_max_tokens_to_keep = 19 [default = 20];
-
-  optional bool knowledge_remove_query = 20 [default = false];
+  optional string cache = 31 [default = ''];
 }
 
-message WSODReader {
-  // Pattern of the input files.
-  repeated string input_pattern = 1;
 
-  // Cycle length of interleave call.
-  optional int32 interleave_cycle_length = 2 [default = 2];
-
-  // If True, repeat the dataset and shuffle the batch.
-  optional bool is_training = 4 [default = false];
-
-  // Shuffle buffer size.
-  optional int32 shuffle_buffer_size = 5 [default = 1000];
-
-  // Number of parallel calls.
-  optional int32 map_num_parallel_calls = 6 [default = 1];
-
-  // Prefetch buffer size.
-  optional int32 prefetch_buffer_size = 7 [default = 200];
-
-  // Batch size.
-  optional int32 batch_size = 8 [default = 32];
-
-  // If false, do not decode image.
-  optional bool decode_image = 10 [default = true];
-
-  // Height of the resized image, depreated, see `image_resizer` for update.
-  optional int32 image_height = 11 [deprecated = true];
-
-  // Width of the resized image, deprecated, see `image_resizer` for update.
-  optional int32 image_width = 12 [deprecated = true];
-
-  // Image channels, deprecated.
-  optional int32 image_channels = 13 [deprecated = true];
-
-  // Image resizer.
-  optional ImageResizer image_resizer = 14;
-
-  // Maximum length of the captions.
-  optional int32 max_caption_length = 15 [deprecated = true];
-
-  // Preprocess options.
-  optional Preprocess preprocess_options = 16;
-
-  // Pad to the max number of proposals to ensure static shape.
-  optional int32 max_num_proposals = 23 [default = 300];
-
-  // If true, shuffle proposals at training time.
-  optional bool shuffle_proposals = 24 [default = false];
-
-  // Randomly resize image according to these scales values.
-  repeated float batch_resize_scale_value = 25;
-
-  // Shard to read, in the format of '0/3', '1/3', '2/3'.
-  // The denominator denotes the number of shards. The numerator denotes the shard to export.
-  optional string shard_indicator = 26;
-}

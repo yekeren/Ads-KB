@@ -31,9 +31,6 @@ message ReasoningModel {
   // Path to the GloVe file.
   optional string glove_path = 7;
 
-  // If true, use a shared vocabulary.
-  optional bool shared_vocab = 8 [default = false];
-
   // If true, use shared encoding for the LSTM or BiLSTM.
   optional bool shared_encoding = 9 [default = false];
 

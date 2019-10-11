@@ -12,7 +12,7 @@ from protos import reasoning_model_pb2
 from core import utils
 from core.training_utils import build_hyperparams
 from models import utils as model_utils
-from reader.advise_reader import InputDataFields
+from readers.ads_reader import InputDataFields
 from core import sequence_encoder
 
 from models.registry import register_model_class
@@ -227,12 +227,11 @@ class Model(ModelBase):
 
     # Decode data fields.
 
-    (image_id, image_feature, proposal_feature, proposal_num, slogan_num,
-     slogan_text_string, slogan_text_length, dbpedia_ids, dbpedia_num,
-     dbpedia_content_string, dbpedia_content_length, dbpedia_slogan_mask,
-     groundtruth_num, groundtruth_text_string, groundtruth_text_length) = (
+    (image_id, proposal_feature, proposal_num, slogan_num, slogan_text_string,
+     slogan_text_length, dbpedia_ids, dbpedia_num, dbpedia_content_string,
+     dbpedia_content_length, dbpedia_slogan_mask, groundtruth_num,
+     groundtruth_text_string, groundtruth_text_length) = (
          examples[InputDataFields.image_id],
-         examples[InputDataFields.image_feature],
          examples[InputDataFields.proposal_feature],
          examples[InputDataFields.proposal_num],
          examples[InputDataFields.slogan_num],

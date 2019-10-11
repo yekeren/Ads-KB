@@ -3,15 +3,9 @@ from __future__ import division
 from __future__ import print_function
 
 from protos import model_pb2
-from protos import wsod_model_pb2
-from protos import cap2det_model_pb2
-from protos import match_gcn_model_pb2
 from protos import reasoning_model_pb2
 from models.registry import get_registered_model_classes
 
-import models.wsod_model
-import models.cap2det_model
-import models.match_gcn_model
 import models.reasoning_model
 
 

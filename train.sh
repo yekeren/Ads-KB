@@ -6,20 +6,16 @@ set -x
 
 # Export PYTHONPATH to use tensorflow models.
 
+export PYTHONPATH="`pwd`:$PYTHONPATH"
 export PYTHONPATH="`pwd`/tensorflow_models/research:$PYTHONPATH"
 export PYTHONPATH="`pwd`/tensorflow_models/research/slim:$PYTHONPATH"
 
 NAME=$1
 
-PIPELINE_CONFIG_PATH="configs.advise/${NAME}.pbtxt"
-NAME="${NAME}"
+PIPELINE_CONFIG_PATH="configs/${NAME}.pbtxt"
 MODEL_DIR="logs/${NAME}"
 SAVED_CKPTS_DIR="logs/${NAME}/saved"
-RESULT_DIR="advise_results"
 MAX_STEPS=20000
-
-mkdir -p ${RESULT_DIR}
-mkdir -p "raw_data/visl.${NAME}.json"
 
 export CUDA_VISIBLE_DEVICES=$2
 python train/trainer_main.py \
@@ -28,27 +24,20 @@ python train/trainer_main.py \
   --model_dir="${MODEL_DIR}" \
   --max_steps=${MAX_STEPS}
 
-#python train/predict_advise.py \
-#  --run_once=true \
-#  --alsologtostderr \
-#  --pipeline_proto="${PIPELINE_CONFIG_PATH}" \
-#  --model_dir="${MODEL_DIR}" \
-#  --input_pattern="/own_files/yekeren/GCN/wsod_reason_test.*" \
-#  --eval_log_dir="${MODEL_DIR}/eval_log" \
-#  --qa_json_path="raw_data/reason.json" \
-#  --json_output_path="raw_data/visl.${NAME}.json" \
-#  --prediction_output_path="${RESULT_DIR}/${NAME}.json"
+RESULT_FILE="advise_results/${NAME}/predictions.json"
+VISL_DIR="advise_results/${NAME}/visl"
 
+mkdir -p "${VISL_DIR}"
 python train/predict_advise.py \
   --run_once=true \
   --alsologtostderr \
   --pipeline_proto="${PIPELINE_CONFIG_PATH}" \
   --model_dir="${MODEL_DIR}" \
   --eval_log_dir="${MODEL_DIR}/eval_log" \
-  --qa_json_path="raw_data/qa.json" \
-  --input_pattern="output.advise/wsod_kb18519_test.record*" \
-  --json_output_path="raw_data/visl.${NAME}.json" \
-  --prediction_output_path="${RESULT_DIR}/${NAME}.json"
+  --qa_json_path="raw_data/statement.json" \
+  --input_pattern="/own_files/yekeren/GCN/ads_test*" \
+  --json_output_path="${VISL_DIR}" \
+  --prediction_output_path="${RESULT_FILE}"
 
 
 exit 0

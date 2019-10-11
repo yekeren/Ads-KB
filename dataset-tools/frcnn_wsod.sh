@@ -10,6 +10,7 @@ python "dataset-tools/wsod_roi_to_npy.py" \
   --image_data_path="raw_data/ads_train_images" \
   --bounding_box_json_path="raw_data/ads_wsod_boxes.json/trainval/" \
   --nmsed_bounding_box_json_path="raw_data/ads_wsod_boxes.json/nmsed/" \
+  --feature_output_path="raw_data/ads_wsod_boxes.json/nmsed_npys" \
   >> log/wsod_roi_to_npy_trainval.log 2>&1 &
 
 export CUDA_VISIBLE_DEVICES=3
@@ -18,6 +19,7 @@ python "dataset-tools/wsod_roi_to_npy.py" \
   --bounding_box_json_path="raw_data/ads_wsod_boxes.json/test/" \
   --nmsed_bounding_box_json_path="raw_data/ads_wsod_boxes.json/nmsed/" \
   --nmsed_roi_image_path="raw_data/ads_wsod_boxes.json/nmsed_rois" \
+  --feature_output_path="raw_data/ads_wsod_boxes.json/nmsed_npys" \
   > log/wsod_roi_to_npy_test.log 2>&1 &
 
 exit 0

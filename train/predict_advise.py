@@ -16,7 +16,7 @@ from protos import pipeline_pb2
 from train import trainer
 from core.training_utils import save_model_if_it_is_better
 
-from reader.advise_reader import InputDataFields
+from readers.ads_reader import InputDataFields
 
 flags = tf.app.flags
 
@@ -390,9 +390,9 @@ def main(_):
     tf.logging.info("Override model checkpoint dir: %s", FLAGS.model_dir)
 
   if FLAGS.input_pattern:
-    while len(pipeline_proto.eval_reader.advise_reader.input_pattern) > 0:
-      pipeline_proto.eval_reader.advise_reader.input_pattern.pop()
-    pipeline_proto.eval_reader.advise_reader.input_pattern.append(
+    while len(pipeline_proto.eval_reader.ads_reader.input_pattern) > 0:
+      pipeline_proto.eval_reader.ads_reader.input_pattern.pop()
+    pipeline_proto.eval_reader.ads_reader.input_pattern.append(
         FLAGS.input_pattern)
     tf.logging.info("Override model input_pattern: %s", FLAGS.input_pattern)
 
