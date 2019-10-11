@@ -1,45 +1,55 @@
 train_reader{
-  advise_reader {
-    input_pattern: "/own_files/yekeren/GCN/wsod_kb18519_trainval.record-00000-of-00010"
-    input_pattern: "/own_files/yekeren/GCN/wsod_kb18519_trainval.record-00001-of-00010"
-    input_pattern: "/own_files/yekeren/GCN/wsod_kb18519_trainval.record-00002-of-00010"
-    input_pattern: "/own_files/yekeren/GCN/wsod_kb18519_trainval.record-00003-of-00010"
-    input_pattern: "/own_files/yekeren/GCN/wsod_kb18519_trainval.record-00004-of-00010"
-    input_pattern: "/own_files/yekeren/GCN/wsod_kb18519_trainval.record-00005-of-00010"
-    input_pattern: "/own_files/yekeren/GCN/wsod_kb18519_trainval.record-00006-of-00010"
-    input_pattern: "/own_files/yekeren/GCN/wsod_kb18519_trainval.record-00007-of-00010"
-    input_pattern: "/own_files/yekeren/GCN/wsod_kb18519_trainval.record-00008-of-00010"
+  ads_reader {
+    input_pattern: "/own_files/yekeren/GCN/ads_trainval.record-00000-of-00010"
+    input_pattern: "/own_files/yekeren/GCN/ads_trainval.record-00001-of-00010"
+    input_pattern: "/own_files/yekeren/GCN/ads_trainval.record-00002-of-00010"
+    input_pattern: "/own_files/yekeren/GCN/ads_trainval.record-00003-of-00010"
+    input_pattern: "/own_files/yekeren/GCN/ads_trainval.record-00004-of-00010"
+    input_pattern: "/own_files/yekeren/GCN/ads_trainval.record-00005-of-00010"
+    input_pattern: "/own_files/yekeren/GCN/ads_trainval.record-00006-of-00010"
+    input_pattern: "/own_files/yekeren/GCN/ads_trainval.record-00007-of-00010"
+    input_pattern: "/own_files/yekeren/GCN/ads_trainval.record-00008-of-00010"
     interleave_cycle_length: 1
     is_training: true
     shuffle_buffer_size: 4000
     map_num_parallel_calls: 5
     prefetch_buffer_size: 8000
     batch_size: 128
-    max_num_texts: 10
+    max_slogan_num: 20
+    max_slogan_len: 50
+    max_statement_num: 20
+    max_statement_len: 50
+    knowledge_base_config {
+      query_to_id_file: "data/sparql_query2id.txt"
+      id_to_comment_file: "data/sparql_id2comment.txt"
+      max_tokens_to_keep: 30
+      max_comments_per_image: 15
+      remove_query: false
+    }
     cache: "MEMORY"
-    knowledge_query_to_id_file: "sparql_query2id.txt"
-    knowledge_id_to_comment_file: "sparql_id2comment.txt"
-    knowledge_max_tokens_to_keep: 30
-    knowledge_max_comments_per_image: 15
-    knowledge_remove_query: false
   }
 }
 eval_reader{
-  advise_reader {
-    input_pattern: "/own_files/yekeren/GCN/wsod_kb18519_trainval.record-00009-of-00010"
+  ads_reader {
+    input_pattern: "/own_files/yekeren/GCN/ads_trainval.record-00009-of-00010"
     interleave_cycle_length: 1
     is_training: false
     shuffle_buffer_size: 1000
     map_num_parallel_calls: 5
     prefetch_buffer_size: 2000
     batch_size: 1
-    max_num_texts: 10
+    max_slogan_num: 20
+    max_slogan_len: 50
+    max_statement_num: 20
+    max_statement_len: 50
+    knowledge_base_config {
+      query_to_id_file: "data/sparql_query2id.txt"
+      id_to_comment_file: "data/sparql_id2comment.txt"
+      max_tokens_to_keep: 30
+      max_comments_per_image: 15
+      remove_query: false
+    }
     cache: "MEMORY"
-    knowledge_query_to_id_file: "sparql_query2id.txt"
-    knowledge_id_to_comment_file: "sparql_id2comment.txt"
-    knowledge_max_tokens_to_keep: 30
-    knowledge_max_comments_per_image: 15
-    knowledge_remove_query: false
   }
 }
 model {
@@ -47,7 +57,7 @@ model {
     shared_dims: 50
     glove_path: '/own_files/yekeren/GCN/glove.6B.50d.txt'
     slgn_vocab_list_path: 'configs/slogan.vocab'
-    slgn_kb_vocab_list_path: 'configs/slogan-dbpedia.txt'
+    slgn_kb_vocab_list_path: 'configs/dbpedia.vocab'
     stmt_vocab_list_path: 'configs/qa.vocab'
     train_word_embedding: true
     project_word_embedding: false
@@ -61,7 +71,7 @@ model {
         feature_indicator: PROPOSAL_AND_SLOGAN
         attention_type: CO_ATTENTION
         graph_slogan_keep_prob: 0.5
-        graph_dbpedia_to_slogan_keep_prob: 0.5
+        graph_dbpedia_to_slogan_keep_prob: 1.0
       }
     }
     text_encoder {
@@ -101,7 +111,7 @@ model {
 train_config {
   max_steps: 20000
   max_gradient_norm: 2.0
-  learning_rate: 0.002
+  learning_rate: 0.001
   learning_rate_decay {
     decay_steps: 10000
     decay_rate: 0.1
