@@ -65,6 +65,9 @@ class AdsReaderTest(tf.test.TestCase):
         print(values['slogan_kb_text_string'])
         print(values['slogan_kb_text_length'])
         print(values['slogan_kb_mask'])
+        print(values['proposal_label_num'])
+        print(values['proposal_label_text'])
+        print(values['proposal_label_mask'])
 
   # def test_create_hash_table(self):
   #   tf.reset_default_graph()

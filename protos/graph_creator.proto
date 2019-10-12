@@ -28,10 +28,14 @@ message ConvGraphCreator {
 
   // Feature indicator to be used.
   enum FeatureIndicator {
-    ONLY_PROPOSAL = 1;
-    ONLY_SLOGAN = 2;
-    PROPOSAL_AND_SLOGAN = 3;
-    ALL = 4;
+    PROPOSAL = 1;
+    SLOGAN = 2;
+    PROPOSAL_LABEL = 3;
+    SLOGAN_DBPEDIA = 4;
+    PROPOSAL_AND_SLOGAN = 5;
+    PROPOSAL_LABEL_AND_SLOGAN = 6;
+    PROPOSAL_AND_SLOGAN_DBPEDIA = 7;
+    ALL = 8;
   }
   optional FeatureIndicator feature_indicator = 9 [default = ALL];
 
@@ -41,9 +45,6 @@ message ConvGraphCreator {
     CO_ATTENTION = 2;
   }
   optional AttentionType attention_type = 11 [default = CO_ATTENTION];
-
-  // If true, connect the proposals and slogans in both direction.
-  optional bool connect_proposal_and_slogan = 12 [default = false];
 
   // Probability to keep an edge in the graph during training.
   optional float graph_connection_dropout_keep_prob = 13 [default = 1.0];
@@ -59,10 +60,14 @@ message HierarchicalGraphCreator {
 
   // Feature indicator to be used.
   enum FeatureIndicator {
-    ONLY_PROPOSAL = 1;
-    ONLY_SLOGAN = 2;
-    PROPOSAL_AND_SLOGAN = 3;
-    ALL = 4;
+    PROPOSAL = 1;
+    SLOGAN = 2;
+    PROPOSAL_LABEL = 3;
+    SLOGAN_DBPEDIA = 4;
+    PROPOSAL_AND_SLOGAN = 5;
+    PROPOSAL_LABEL_AND_SLOGAN = 6;
+    PROPOSAL_AND_SLOGAN_DBPEDIA = 7;
+    ALL = 8;
   }
   optional FeatureIndicator feature_indicator = 9 [default = ALL];
 
@@ -76,11 +81,10 @@ message HierarchicalGraphCreator {
   // If true, connect the proposals and slogans in both direction.
   optional bool connect_proposal_and_slogan = 12 [default = false];
 
-  // Probability to keep an edge in the graph during training.
-  optional float graph_connection_dropout_keep_prob = 13 [default = 1.0];
-
   optional float sparse_loss_weight = 14 [default = 0.0];
 
   optional float graph_slogan_keep_prob = 16 [default = 1.0];
   optional float graph_dbpedia_to_slogan_keep_prob = 17 [default = 1.0];
+  optional float graph_proposal_keep_prob = 18 [default = 1.0];
+  optional float graph_label_to_proposal_keep_prob = 19 [default = 1.0];
 }

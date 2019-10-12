@@ -22,8 +22,8 @@ train_reader{
     knowledge_base_config {
       query_to_id_file: "data/sparql_query2id.txt"
       id_to_comment_file: "data/sparql_id2comment.txt"
-      max_tokens_to_keep: 30
-      max_comments_per_image: 15
+      max_tokens_to_keep: 50
+      max_comments_per_image: 20
       remove_query: false
     }
     cache: "MEMORY"
@@ -45,8 +45,8 @@ eval_reader{
     knowledge_base_config {
       query_to_id_file: "data/sparql_query2id.txt"
       id_to_comment_file: "data/sparql_id2comment.txt"
-      max_tokens_to_keep: 30
-      max_comments_per_image: 15
+      max_tokens_to_keep: 50
+      max_comments_per_image: 20
       remove_query: false
     }
     cache: "MEMORY"
@@ -54,33 +54,36 @@ eval_reader{
 }
 model {
   [ReasoningModel.ext] {
-    shared_dims: 50
-    glove_path: '/own_files/yekeren/GCN/glove.6B.50d.txt'
+    shared_dims: 200
+    glove_path: '/own_files/yekeren/GCN/glove.6B.300d.txt'
     slgn_vocab_list_path: 'configs/slogan.vocab'
     slgn_kb_vocab_list_path: 'configs/dbpedia.vocab'
     stmt_vocab_list_path: 'configs/qa.vocab'
+    ads_vocab_list_path: 'configs/ads_synonyms.vocab'
     train_word_embedding: true
     project_word_embedding: false
     graph_creator {
       hierarchical_graph_creator {
         edge_mlp_options {
           hidden_layers: 1
-          hidden_units: 100
+          hidden_units: 200
           dropout_keep_prob: 0.5
         }
         feature_indicator: ALL
         attention_type: CO_ATTENTION
+        graph_proposal_keep_prob: 0.5
+        graph_label_to_proposal_keep_prob: 1.0
         graph_slogan_keep_prob: 0.5
         graph_dbpedia_to_slogan_keep_prob: 1.0
       }
     }
     text_encoder {
       bilstm_encoder {
-        hidden_units: 100
+        hidden_units: 200
         number_of_layers: 1
         output_keep_prob: 0.8
         state_keep_prob: 0.8
-        output_units: 50
+        output_units: 200
       }
     }
     triplet_margin: 0.2

@@ -5,8 +5,6 @@ from __future__ import print_function
 import tensorflow as tf
 
 from protos import reader_pb2
-from readers import wsod_reader
-from readers import advise_reader
 from readers import ads_reader
 
 

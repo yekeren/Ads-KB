@@ -43,6 +43,10 @@ class InputDataFields(object):
   proposal_text_length = 'proposal_text_length'
   proposal_feature = 'proposal_feature'
 
+  proposal_label_num = 'proposal_label_num'
+  proposal_label_text = 'proposal_label_text'
+  proposal_label_mask = 'proposal_label_mask'
+
   slogan_num = 'slogan_num'
   slogan_box = 'slogan_box'
   slogan_text_string = 'slogan_text_string'
@@ -176,31 +180,21 @@ class KnowledgeBase(object):
       kb_mask = tf.to_float(tf.reduce_any(kb_mask, axis=1))
 
     # Mask out query words in the retrieved contents.
+    #   query: A [sent_num, query_num] string tensor.
 
-    # if self._remove_query:
-    #   with tf.name_scope('mask_query_words'):
-    #     masked_uniq_kb_content_strings = []
-    #     for query_per_image, uniq_kb_content_strings_per_image in zip(
-    #         tf.unstack(query, axis=0),
-    #         tf.unstack(uniq_kb_content_strings, axis=0)):
-    #       query_per_image_flattented = tf.boolean_mask(
-    #           query_per_image,
-    #           tf.not_equal(query_per_image, ''),
-    #           name='select_non_empty_query_words')
-    #       uniq_query_words_per_image, _ = tf.unique(query_per_image_flattented)
+    if options.remove_query:
+      with tf.name_scope('mask_query_words'):
+        query_flattented = tf.boolean_mask(query, tf.not_equal(query, ''))
+        uniq_query, _ = tf.unique(query_flattented)
 
-    #       equal_mask = tf.equal(
-    #           tf.expand_dims(uniq_kb_content_strings_per_image, axis=-1),
-    #           tf.reshape(uniq_query_words_per_image, [1, 1, -1]))
-    #       not_equal_mask = tf.logical_not(tf.reduce_any(equal_mask, axis=-1))
-    #       masked_uniq_kb_content_strings.append(
-    #           tf.where(
-    #               not_equal_mask, uniq_kb_content_strings_per_image,
-    #               tf.fill(
-    #                   dims=tf.shape(uniq_kb_content_strings_per_image),
-    #                   value='[query]')))
-    #     uniq_kb_content_strings = tf.stack(
-    #         masked_uniq_kb_content_strings, axis=0)
+        equal_mask = tf.equal(
+            tf.expand_dims(kb_text_string, axis=-1),
+            tf.expand_dims(tf.expand_dims(uniq_query, 0), 0))
+        not_equal_mask = tf.logical_not(tf.reduce_any(equal_mask, axis=-1))
+
+        kb_text_string = tf.where(
+            not_equal_mask, kb_text_string,
+            tf.fill(dims=tf.shape(kb_text_string), value='[query]'))
 
     return (kb_num, kb_ids, kb_text_string, kb_text_length, kb_mask)
 
@@ -267,6 +261,24 @@ def get_input_fn(options):
     ) = _decode_text_string_and_length(
         tf.sparse_tensor_to_dense(
             parsed[TFExampleDataFields.proposal_text], default_value=''))
+
+    # Proposal labels.
+
+    proposal_text_string = feature_dict[InputDataFields.proposal_text_string]
+    uniq_label = tf.boolean_mask(
+        proposal_text_string,
+        tf.logical_and(
+            tf.not_equal(proposal_text_string, 'null'),
+            tf.not_equal(proposal_text_string, '')))
+    uniq_label, _ = tf.unique(uniq_label)
+    label_proposal_mask = tf.equal(
+        tf.expand_dims(proposal_text_string, -1),
+        tf.expand_dims(tf.expand_dims(uniq_label, 0), 0))
+    label_proposal_mask = tf.to_float(
+        tf.reduce_any(label_proposal_mask, axis=1))
+    feature_dict[InputDataFields.proposal_label_num] = tf.shape(uniq_label)[0]
+    feature_dict[InputDataFields.proposal_label_text] = uniq_label
+    feature_dict[InputDataFields.proposal_label_mask] = label_proposal_mask
 
     # Text slogans.
 
@@ -356,6 +368,9 @@ def get_input_fn(options):
         InputDataFields.question_num: [],
         InputDataFields.question_text_string: [None, None],
         InputDataFields.question_text_length: [None],
+        InputDataFields.proposal_label_num: [],
+        InputDataFields.proposal_label_text: [None],
+        InputDataFields.proposal_label_mask: [None, None],
         InputDataFields.slogan_kb_num: [],
         InputDataFields.slogan_kb_ids: [None],
         InputDataFields.slogan_kb_text_string: [None, None],

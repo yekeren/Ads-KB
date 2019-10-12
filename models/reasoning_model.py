@@ -56,15 +56,16 @@ class Model(ModelBase):
     slgn_vocab_with_freq = model_utils.read_vocabulary_with_frequency(
         options.slgn_vocab_list_path)
     slgn_vocab_list = filter_fn(slgn_vocab_with_freq, 20)
-    #slgn_vocab_list = filter_fn(slgn_vocab_with_freq, 5)
 
     slgn_dbpedia_vocab_with_freq = model_utils.read_vocabulary_with_frequency(
         options.slgn_kb_vocab_list_path)
     slgn_dbpedia_vocab_list = filter_fn(slgn_dbpedia_vocab_with_freq, 20)
-    #slgn_dbpedia_vocab_list = filter_fn(slgn_dbpedia_vocab_with_freq, 5)
+
+    ads_labels = model_utils.read_vocabulary(options.ads_vocab_list_path)
 
     vocab_list = sorted(
-        set(stmt_vocab_list + slgn_vocab_list + slgn_dbpedia_vocab_list))
+        set(stmt_vocab_list + slgn_vocab_list + slgn_dbpedia_vocab_list +
+            ads_labels))
     tf.logging.info('Vocab, len=%i', len(vocab_list))
 
     # Read glove data.
@@ -227,13 +228,17 @@ class Model(ModelBase):
 
     # Decode data fields.
 
-    (image_id, proposal_feature, proposal_num, slogan_num, slogan_text_string,
-     slogan_text_length, dbpedia_ids, dbpedia_num, dbpedia_content_string,
-     dbpedia_content_length, dbpedia_slogan_mask, groundtruth_num,
-     groundtruth_text_string, groundtruth_text_length) = (
+    (image_id, proposal_num, proposal_feature, label_num, label_text,
+     label_proposal_mask, slogan_num, slogan_text_string, slogan_text_length,
+     dbpedia_ids, dbpedia_num, dbpedia_content_string, dbpedia_content_length,
+     dbpedia_slogan_mask, groundtruth_num, groundtruth_text_string,
+     groundtruth_text_length) = (
          examples[InputDataFields.image_id],
-         examples[InputDataFields.proposal_feature],
          examples[InputDataFields.proposal_num],
+         examples[InputDataFields.proposal_feature],
+         examples[InputDataFields.proposal_label_num],
+         examples[InputDataFields.proposal_label_text],
+         examples[InputDataFields.proposal_label_mask],
          examples[InputDataFields.slogan_num],
          examples[InputDataFields.slogan_text_string],
          examples[InputDataFields.slogan_text_length],
@@ -342,16 +347,12 @@ class Model(ModelBase):
           dbpedia_content_length,
           scope='knowledge_encoding'
           if not options.shared_encoding else 'shared_encoding')
-      dbpedia_repr = slim.dropout(
-          dbpedia_repr,
-          options.dbpedia_repr_dropout_keep_prob,
-          is_training=is_training)
     dbpedia_mask = tf.sequence_mask(
         dbpedia_num,
         maxlen=tf.shape(dbpedia_content_string)[1],
         dtype=tf.float32)
 
-    # Image representation.
+    # Proposal representation.
     #   proposal_mask shape = [batch_i, max_proposal_num]
     #   proposal_repr shape = [batch_i, max_proposal_num, feature_dims]
 
@@ -362,6 +363,22 @@ class Model(ModelBase):
         num_outputs=self._shared_dims,
         activation_fn=None,
         scope='proposal_encoding')
+
+    # Uncertain label representation.
+    #   label_repr shape = [batch_i, max_label_num, shared_dims]
+    #   label_mask shape = [batch_i, max_label_num]
+    #   label_proposal_mask shape = [batch_i, max_proposal_num, max_label_num]
+
+    max_label_num = utils.get_tensor_shape(label_text)[1]
+    with tf.variable_scope(
+        tf.get_variable_scope(), reuse=options.shared_encoding):
+      label_repr = self._text_encoding_helper(
+          tf.expand_dims(embedding_helper(label_text), axis=2),
+          tf.ones([batch_i, max_label_num], dtype=tf.int32),
+          scope='label_encoding'
+          if not options.shared_encoding else 'shared_encoding')
+    label_mask = tf.sequence_mask(
+        label_num, maxlen=tf.shape(label_repr)[1], dtype=tf.float32)
 
     # Sentinel representation.
 
@@ -375,8 +392,9 @@ class Model(ModelBase):
 
     (image_repr, adjacency,
      adjacency_logits, slogan_values) = self._graph_creator.create_graph(
-         proposal_repr, slogan_repr, dbpedia_repr, proposal_mask, slogan_mask,
-         dbpedia_mask, dbpedia_slogan_mask)
+         proposal_repr, slogan_repr, label_repr, dbpedia_repr, proposal_mask,
+         slogan_mask, label_mask, label_proposal_mask, dbpedia_mask,
+         dbpedia_slogan_mask)
 
     # Graph convolutional network.
 

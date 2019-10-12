@@ -277,6 +277,8 @@ def _run_prediction(pipeline_proto,
         proposal_box,
         proposal_strings,
         proposal_lengths,
+        label_num,
+        label_text,
         slogan_num,
         slogan_box,
         slogan_strings,
@@ -289,6 +291,8 @@ def _run_prediction(pipeline_proto,
          example[InputDataFields.proposal_box][0],
          example[InputDataFields.proposal_text_string][0],
          example[InputDataFields.proposal_text_length][0],
+         example[InputDataFields.proposal_label_num][0],
+         example[InputDataFields.proposal_label_text][0],
          example[InputDataFields.slogan_num][0],
          example[InputDataFields.slogan_box][0],
          example[InputDataFields.slogan_text_string][0],
@@ -311,6 +315,10 @@ def _run_prediction(pipeline_proto,
           _boxes_to_json_array(proposal_box),
           'proposal_labels':
           _varlen_strings_to_json_array(proposal_strings, proposal_lengths),
+          'label_num':
+          int(label_num),
+          'label_text':
+          [x.decode('ascii') for x in label_text],
           'slogan_num':
           int(slogan_num),
           'slogan_boxes':

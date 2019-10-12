@@ -142,9 +142,9 @@ class GraphCreator(abc.ABC):
     self._is_training = is_training
 
   @abc.abstractmethod
-  def create_graph(self, proposal_repr, slogan_repr, dbpedia_repr,
-                   proposal_mask, slogan_mask, dbpedia_mask,
-                   dbpedia_to_slogan_mask):
+  def create_graph(self, proposal_repr, slogan_repr, label_repr, dbpedia_repr,
+                   proposal_mask, slogan_mask, label_mask, label_to_slogan_mask,
+                   dbpedia_mask, dbpedia_to_slogan_mask):
     pass
 
 
@@ -174,6 +174,8 @@ class ConvGraphCreator(GraphCreator):
   def _create_access_matrix(self,
                             max_proposal_num,
                             max_slogan_num,
+                            max_label_num,
+                            label_to_proposal_mask,
                             max_dbpedia_num,
                             dbpedia_to_slogan_mask,
                             batch=1):
@@ -181,8 +183,11 @@ class ConvGraphCreator(GraphCreator):
 
     Args:
       max_proposal_num: A scalar tensor denoting maximum number of proposals.
+      max_label_num: A scalar tensor denoting maximum number of labels.
+      label_to_proposal_mask: A [batch, max_proposal_num, max_label_num] tensor.
       max_slogan_num: A scalar tensor denoting maximum number of slogans.
       max_dbpedia_num: A scalar tensor denoting maximum number of dbpedia comments.
+      dbpedia_to_slogan_mask: A [batch, max_slogan_num, max_dbpedia_num] tensor.
 
     Returns:
       A [batch, max_node_num, max_node_num] float tensor.
@@ -195,8 +200,11 @@ class ConvGraphCreator(GraphCreator):
       # Check if proposal feature is enabled.
 
       if options.feature_indicator in [
-          graph_creator_pb2.ConvGraphCreator.ONLY_PROPOSAL,
+          graph_creator_pb2.ConvGraphCreator.PROPOSAL,
+          graph_creator_pb2.ConvGraphCreator.PROPOSAL_LABEL,
           graph_creator_pb2.ConvGraphCreator.PROPOSAL_AND_SLOGAN,
+          graph_creator_pb2.ConvGraphCreator.PROPOSAL_LABEL_AND_SLOGAN,
+          graph_creator_pb2.ConvGraphCreator.PROPOSAL_AND_SLOGAN_DBPEDIA,
           graph_creator_pb2.ConvGraphCreator.ALL,
       ]:
         proposal_to_sentinel_mask = tf.ones([batch, 1, max_proposal_num])
@@ -206,32 +214,38 @@ class ConvGraphCreator(GraphCreator):
       # Check if slogan feature is enabled.
 
       if options.feature_indicator in [
-          graph_creator_pb2.ConvGraphCreator.ONLY_SLOGAN,
+          graph_creator_pb2.ConvGraphCreator.SLOGAN,
+          graph_creator_pb2.ConvGraphCreator.SLOGAN_DBPEDIA,
           graph_creator_pb2.ConvGraphCreator.PROPOSAL_AND_SLOGAN,
+          graph_creator_pb2.ConvGraphCreator.PROPOSAL_LABEL_AND_SLOGAN,
+          graph_creator_pb2.ConvGraphCreator.PROPOSAL_AND_SLOGAN_DBPEDIA,
           graph_creator_pb2.ConvGraphCreator.ALL,
       ]:
         slogan_to_sentinel_mask = tf.ones([batch, 1, max_slogan_num])
       else:
         slogan_to_sentinel_mask = tf.zeros([batch, 1, max_slogan_num])
 
+      # Check if label feature is enabled.
+
+      if options.feature_indicator in [
+          graph_creator_pb2.ConvGraphCreator.PROPOSAL_LABEL_AND_SLOGAN,
+          graph_creator_pb2.ConvGraphCreator.ALL,
+      ]:
+        label_to_proposal_mask = label_to_proposal_mask
+      else:
+        label_to_proposal_mask = tf.zeros(
+            [batch, max_proposal_num, max_label_num])
+
       # Check if dbpedia feature is enabled.
 
       if options.feature_indicator in [
+          graph_creator_pb2.ConvGraphCreator.PROPOSAL_AND_SLOGAN_DBPEDIA,
           graph_creator_pb2.ConvGraphCreator.ALL,
       ]:
         dbpedia_to_slogan_mask = dbpedia_to_slogan_mask
       else:
         dbpedia_to_slogan_mask = tf.zeros(
             [batch, max_slogan_num, max_dbpedia_num])
-
-      # Check if proposal and slogan nodes are connected.
-
-      if options.connect_proposal_and_slogan:
-        slogan_to_proposal_mask = tf.ones(
-            [batch, max_proposal_num, max_slogan_num])
-      else:
-        slogan_to_proposal_mask = tf.zeros(
-            [batch, max_proposal_num, max_slogan_num])
 
       def dropout_fn(x, keep_prob=1.0):
         if not is_training:
@@ -247,34 +261,52 @@ class ConvGraphCreator(GraphCreator):
           tf.zeros([batch, 1, 1]),
           proposal_to_sentinel_mask,
           slogan_to_sentinel_mask,
+          tf.zeros([batch, 1, max_label_num]),
           tf.zeros([batch, 1, max_dbpedia_num]),
       ])
       access_matrix.append([
           tf.zeros([batch, max_proposal_num, 1]),
-          tf.eye(
-              num_rows=max_proposal_num,
-              num_columns=max_proposal_num,
-              batch_shape=[batch]),
-          slogan_to_proposal_mask,
+          dropout_fn(
+              tf.eye(
+                  num_rows=max_proposal_num,
+                  num_columns=max_proposal_num,
+                  batch_shape=[batch]),
+              keep_prob=options.graph_proposal_keep_prob),
+          tf.zeros([batch, max_proposal_num, max_slogan_num]),
+          dropout_fn(
+              label_to_proposal_mask,
+              keep_prob=options.graph_label_to_proposal_keep_prob),
           tf.zeros([batch, max_proposal_num, max_dbpedia_num]),
       ])
       access_matrix.append([
           tf.zeros([batch, max_slogan_num, 1]),
-          tf.transpose(slogan_to_proposal_mask, [0, 2, 1]),
+          tf.zeros([batch, max_slogan_num, max_proposal_num]),
           dropout_fn(
               tf.eye(
                   num_rows=max_slogan_num,
                   num_columns=max_slogan_num,
                   batch_shape=[batch]),
               keep_prob=options.graph_slogan_keep_prob),
+          tf.zeros([batch, max_slogan_num, max_label_num]),
           dropout_fn(
               dbpedia_to_slogan_mask,
               keep_prob=options.graph_dbpedia_to_slogan_keep_prob),
       ])
       access_matrix.append([
+          tf.zeros([batch, max_label_num, 1]),
+          tf.zeros([batch, max_label_num, max_proposal_num]),
+          tf.zeros([batch, max_label_num, max_slogan_num]),
+          tf.eye(
+              num_rows=max_label_num,
+              num_columns=max_label_num,
+              batch_shape=[batch]),
+          tf.zeros([batch, max_label_num, max_dbpedia_num]),
+      ])
+      access_matrix.append([
           tf.zeros([batch, max_dbpedia_num, 1]),
           tf.zeros([batch, max_dbpedia_num, max_proposal_num]),
           tf.zeros([batch, max_dbpedia_num, max_slogan_num]),
+          tf.zeros([batch, max_dbpedia_num, max_label_num]),
           tf.eye(
               num_rows=max_dbpedia_num,
               num_columns=max_dbpedia_num,
@@ -285,8 +317,9 @@ class ConvGraphCreator(GraphCreator):
 
     return access_matrix
 
-  def _create_lv0_edge_scores(self, proposal_repr, slogan_repr, dbpedia_repr,
-                              proposal_mask, slogan_mask, dbpedia_mask):
+  def _create_lv0_edge_scores(self, proposal_repr, slogan_repr, label_repr,
+                              dbpedia_repr, proposal_mask, slogan_mask,
+                              label_mask, dbpedia_mask):
     """Creates adjacency matrix. Each elem denotes an edge weight.
 
     Args:
@@ -298,62 +331,96 @@ class ConvGraphCreator(GraphCreator):
         weights of different proposals.
       slogan_scores: A [batch, max_slogan_num] float tensor denoting weights
         of different slogans.
+      label_to_proposal_scores: A [batch, max_proposal_num, max_label_num] tensor.
       dbpedia_to_slogan_scores: A [batch, max_slogan_num, max_dbpedia_num] tensor.
     """
     options = self._options
     is_training = self._is_training
 
-    (batch_i, max_proposal_num, max_slogan_num,
+    (batch_i, max_proposal_num, max_slogan_num, max_label_num,
      max_dbpedia_num) = (proposal_repr.get_shape()[0].value,
                          utils.get_tensor_shape(proposal_repr)[1],
                          utils.get_tensor_shape(slogan_repr)[1],
+                         utils.get_tensor_shape(label_repr)[1],
                          utils.get_tensor_shape(dbpedia_repr)[1])
 
     with tf.name_scope('create_lv0_attention_weights'):
 
-      # Process predictions.
+      # Predictions for updating slogan.
       #   slogan_dbpedia_to_proposal_scores shape =
       #     [batch, max_proposal_num, max_slogan_num + max_dbpedia_num].
       #   slogan_dbpedia_to_slogan_scores shape =
       #     [batch, max_slogan_num, max_slogan_num + max_dbpedia_num].
 
       slogan_dbpedia_repr = tf.concat([slogan_repr, dbpedia_repr], axis=1)
-
       slogan_dbpedia_to_proposal_scores = self._create_edge_weights_helper(
           proposal_repr,
           slogan_dbpedia_repr,
           scope='slogan_dbpedia_to_proposal_scores')
-
       slogan_dbpedia_to_slogan_scores = self._create_edge_weights_helper(
           slogan_repr,
           slogan_dbpedia_repr,
           scope='slogan_dbpedia_to_slogan_scores')
 
-      # Compute dbpedia_to_slogan_scores.
-      #   slogan_dbpedia_scores shape = [batch, 1, max_slogan_num + max_dbpedia_num]
+      # Predictions for updating proposal.
+      #   proposal_label_to_proposal_scores shape =
+      #     [batch, max_proposal_num, max_proposal_num + max_label_num].
+      #   proposal_label_to_slogan_scores shape =
+      #     [batch, max_slogan_num, max_proposal_num + max_label_num]
+
+      proposal_label_repr = tf.concat([proposal_repr, label_repr], axis=1)
+      proposal_label_to_proposal_scores = self._create_edge_weights_helper(
+          proposal_repr,
+          proposal_label_repr,
+          scope='proposal_label_to_proposal_scores')
+      proposal_label_to_slogan_scores = self._create_edge_weights_helper(
+          slogan_repr,
+          proposal_label_repr,
+          scope='proposal_label_to_slogan_scores')
+
+      # Compute slogan_dbpedia_to_slogan_scores.
+      #   slogan_dbpedia_context_scores shape = [batch, 1, max_slogan_num + max_dbpedia_num]
       #   slogan_dbpedia_to_slogan_scores shape = [batch, max_slogan_num, max_slogan_num + max_dbpedia_num]
 
-      slogan_dbpedia_scores = utils.masked_avg(
+      slogan_dbpedia_context_scores = utils.masked_avg(
           slogan_dbpedia_to_proposal_scores,
           mask=tf.expand_dims(proposal_mask, 2),
           dim=1)
-
-      slogan_dbpedia_to_slogan_scores = tf.add(slogan_dbpedia_scores,
+      slogan_dbpedia_to_slogan_scores = tf.add(slogan_dbpedia_context_scores,
                                                slogan_dbpedia_to_slogan_scores)
 
-      slogan_scores = tf.slice(
-          slogan_dbpedia_to_slogan_scores,
-          begin=[0, 0, 0],
-          size=[batch_i, max_slogan_num, max_slogan_num])
+      slogan_scores = tf.linalg.diag_part(
+          tf.slice(
+              slogan_dbpedia_to_slogan_scores,
+              begin=[0, 0, 0],
+              size=[batch_i, max_slogan_num, max_slogan_num]))
       dbpedia_to_slogan_scores = tf.slice(
           slogan_dbpedia_to_slogan_scores,
           begin=[0, 0, max_slogan_num],
           size=[batch_i, max_slogan_num, max_dbpedia_num])
 
-      slogan_scores = tf.linalg.diag_part(slogan_scores)
-      proposal_scores = tf.ones([batch_i, max_proposal_num])
+      # Compute proposal_label_to_proposal_scores.
+      #   proposal_label_context_scores shape = [batch, 1, max_proposal_num + max_label_num]
+      #   proposal_label_to_proposal_scores shape = [batch, max_proposal_num, max_proposal_num + max_label_num]
 
-      return proposal_scores, slogan_scores, dbpedia_to_slogan_scores
+      proposal_label_context_scores = utils.masked_avg(
+          proposal_label_to_slogan_scores,
+          mask=tf.expand_dims(slogan_mask, 2),
+          dim=1)
+      proposal_label_to_proposal_scores = tf.add(
+          proposal_label_context_scores, proposal_label_to_proposal_scores)
+
+      proposal_scores = tf.linalg.diag_part(
+          tf.slice(
+              proposal_label_to_proposal_scores,
+              begin=[0, 0, 0],
+              size=[batch_i, max_proposal_num, max_proposal_num]))
+      label_to_proposal_scores = tf.slice(
+          proposal_label_to_proposal_scores,
+          begin=[0, 0, max_proposal_num],
+          size=[batch_i, max_proposal_num, max_label_num])
+
+      return proposal_scores, slogan_scores, label_to_proposal_scores, dbpedia_to_slogan_scores
 
   def _create_lv1_edge_scores(self, proposal_repr, slogan_repr, proposal_mask,
                               slogan_mask):
@@ -421,7 +488,7 @@ class ConvGraphCreator(GraphCreator):
 
   def _create_adjacency_matrix(self, proposal_to_sentinel, slogan_to_sentinel,
                                proposal_to_proposal, slogan_to_slogan,
-                               dbpedia_to_slogan):
+                               label_to_proposal, dbpedia_to_slogan):
     """Creates adjacency matrix based on the predicted weights.
 
     Args:
@@ -435,10 +502,11 @@ class ConvGraphCreator(GraphCreator):
     Returns:
       adjacency matrix of shape [batch, max_node_num, max_node_num].
     """
-    (batch_i, max_proposal_num, max_slogan_num,
+    (batch_i, max_proposal_num, max_slogan_num, max_label_num,
      max_dbpedia_num) = (proposal_to_sentinel.get_shape()[0].value,
                          utils.get_tensor_shape(proposal_to_sentinel)[2],
                          utils.get_tensor_shape(slogan_to_sentinel)[2],
+                         utils.get_tensor_shape(label_to_proposal)[2],
                          utils.get_tensor_shape(dbpedia_to_slogan)[2])
 
     with tf.name_scope('create_adjacency_matrix'):
@@ -447,32 +515,43 @@ class ConvGraphCreator(GraphCreator):
           tf.zeros([batch_i, 1, 1]),
           proposal_to_sentinel,
           slogan_to_sentinel,
+          tf.zeros([batch_i, 1, max_label_num]),
           tf.zeros([batch_i, 1, max_dbpedia_num]),
       ])
       node_to_node.append([
           tf.zeros([batch_i, max_proposal_num, 1]),
           proposal_to_proposal,
           tf.zeros([batch_i, max_proposal_num, max_slogan_num]),
+          label_to_proposal,
           tf.zeros([batch_i, max_proposal_num, max_dbpedia_num]),
       ])
       node_to_node.append([
           tf.zeros([batch_i, max_slogan_num, 1]),
           tf.zeros([batch_i, max_slogan_num, max_proposal_num]),
           slogan_to_slogan,
+          tf.zeros([batch_i, max_slogan_num, max_label_num]),
           dbpedia_to_slogan,
+      ])
+      node_to_node.append([
+          tf.zeros([batch_i, max_label_num, 1]),
+          tf.zeros([batch_i, max_label_num, max_proposal_num]),
+          tf.zeros([batch_i, max_label_num, max_slogan_num]),
+          tf.zeros([batch_i, max_label_num, max_label_num]),
+          tf.zeros([batch_i, max_label_num, max_dbpedia_num]),
       ])
       node_to_node.append([
           tf.zeros([batch_i, max_dbpedia_num, 1]),
           tf.zeros([batch_i, max_dbpedia_num, max_proposal_num]),
           tf.zeros([batch_i, max_dbpedia_num, max_slogan_num]),
+          tf.zeros([batch_i, max_dbpedia_num, max_label_num]),
           tf.zeros([batch_i, max_dbpedia_num, max_dbpedia_num]),
       ])
       node_to_node = _concat_batch_2d_tensors(node_to_node)
     return node_to_node
 
-  def create_graph(self, proposal_repr, slogan_repr, dbpedia_repr,
-                   proposal_mask, slogan_mask, dbpedia_mask,
-                   dbpedia_to_slogan_mask):
+  def create_graph(self, proposal_repr, label_repr, slogan_repr, dbpedia_repr,
+                   proposal_mask, label_mask, label_to_proposal_mask,
+                   slogan_mask, dbpedia_mask, dbpedia_to_slogan_mask):
     """Creates graph."""
     options = self._options
     is_training = self._is_training
@@ -540,31 +619,32 @@ class HierarchicalGraphCreator(ConvGraphCreator):
     """Initializes the graph creator."""
     super(HierarchicalGraphCreator, self).__init__(options, is_training)
 
-  def create_graph(self, proposal_repr, slogan_repr, dbpedia_repr,
-                   proposal_mask, slogan_mask, dbpedia_mask,
-                   dbpedia_to_slogan_mask):
+  def create_graph(self, proposal_repr, slogan_repr, label_repr, dbpedia_repr,
+                   proposal_mask, slogan_mask, label_mask, label_to_slogan_mask,
+                   dbpedia_mask, dbpedia_to_slogan_mask):
     """Creates graph."""
     options = self._options
     is_training = self._is_training
 
-    (batch_i, embedding_dims, max_proposal_num, max_slogan_num,
+    (batch_i, embedding_dims, max_proposal_num, max_label_num, max_slogan_num,
      max_dbpedia_num) = (proposal_repr.get_shape()[0].value,
                          proposal_repr.get_shape()[-1].value,
                          utils.get_tensor_shape(proposal_repr)[1],
+                         utils.get_tensor_shape(label_repr)[1],
                          utils.get_tensor_shape(slogan_repr)[1],
                          utils.get_tensor_shape(dbpedia_repr)[1])
 
     # Create access matrix.
 
-    access_matrix = self._create_access_matrix(max_proposal_num, max_slogan_num,
-                                               max_dbpedia_num,
-                                               dbpedia_to_slogan_mask, batch_i)
+    access_matrix = self._create_access_matrix(
+        max_proposal_num, max_slogan_num, max_label_num, label_to_slogan_mask,
+        max_dbpedia_num, dbpedia_to_slogan_mask, batch_i)
     tf.summary.histogram('histogram/access_matrix', access_matrix)
 
     sentinel_mask = tf.ones([batch_i, 1])
     sentinel_repr = tf.zeros([batch_i, 1, proposal_repr.get_shape()[-1].value])
     node_mask = tf.concat(
-        [sentinel_mask, proposal_mask, slogan_mask, dbpedia_mask], axis=1)
+        [sentinel_mask, proposal_mask, slogan_mask, label_mask, dbpedia_mask], axis=1)
 
     # Layer level-0 inference.
 
@@ -572,10 +652,10 @@ class HierarchicalGraphCreator(ConvGraphCreator):
 
       # lv0 predictions.
 
-      (lv0_proposal_scores, lv0_slogan_scores,
+      (lv0_proposal_scores, lv0_slogan_scores, lv0_label_to_proposal_scores,
        lv0_dbpedia_to_slogan_scores) = self._create_lv0_edge_scores(
-           proposal_repr, slogan_repr, dbpedia_repr, proposal_mask, slogan_mask,
-           dbpedia_mask)
+           proposal_repr, slogan_repr, label_repr, dbpedia_repr, proposal_mask,
+           slogan_mask, label_mask, dbpedia_mask)
 
       # Create lv0 graph, edges to sentinel are not updated.
 
@@ -584,6 +664,7 @@ class HierarchicalGraphCreator(ConvGraphCreator):
           slogan_to_sentinel=tf.zeros([batch_i, 1, max_slogan_num]),
           proposal_to_proposal=tf.linalg.diag(lv0_proposal_scores),
           slogan_to_slogan=tf.linalg.diag(lv0_slogan_scores),
+          label_to_proposal=lv0_label_to_proposal_scores,
           dbpedia_to_slogan=lv0_dbpedia_to_slogan_scores)
 
       adjacency = utils.masked_softmax(
@@ -596,7 +677,7 @@ class HierarchicalGraphCreator(ConvGraphCreator):
               tf.expand_dims(node_mask, 1), tf.expand_dims(node_mask, 2)))
 
       node_repr = tf.concat(
-          [sentinel_repr, proposal_repr, slogan_repr, dbpedia_repr], axis=1)
+          [sentinel_repr, proposal_repr, slogan_repr, label_repr, dbpedia_repr], axis=1)
       node_repr = tf.matmul(adjacency, node_repr)
 
     # Layer level-1 inference.
@@ -626,6 +707,7 @@ class HierarchicalGraphCreator(ConvGraphCreator):
           slogan_to_sentinel=tf.expand_dims(lv1_slogan_scores, 1),
           proposal_to_proposal=tf.linalg.diag(lv0_proposal_scores),
           slogan_to_slogan=tf.linalg.diag(lv0_slogan_scores),
+          label_to_proposal=lv0_label_to_proposal_scores,
           dbpedia_to_slogan=lv0_dbpedia_to_slogan_scores)
 
       adjacency = utils.masked_softmax(
@@ -638,7 +720,7 @@ class HierarchicalGraphCreator(ConvGraphCreator):
               tf.expand_dims(node_mask, 1), tf.expand_dims(node_mask, 2)))
 
       node_repr = tf.concat(
-          [sentinel_repr, proposal_repr, slogan_repr, dbpedia_repr], axis=1)
+          [sentinel_repr, proposal_repr, slogan_repr, label_repr, dbpedia_repr], axis=1)
       node_repr = tf.matmul(adjacency, node_repr)
 
     tf.summary.histogram('histogram/adjacency_logits', node_to_node)

@@ -43,8 +43,11 @@ message ReasoningModel {
   // Statement vocab file.
   optional string stmt_vocab_list_path = 12;
 
+  // Path to the ads labels file.
+  optional string ads_vocab_list_path = 13;
+
   // If set, use the text encoder instead of average pooling.
-  optional SequenceEncoder text_encoder = 13;
+  optional SequenceEncoder text_encoder = 14;
 
   // Margin of triplet loss.
   optional float triplet_margin = 21 [default = 0.2];
@@ -57,7 +60,4 @@ message ReasoningModel {
 
   // Dropout keep probability of the dot-product.
   optional float dot_product_dropout_keep_prob = 32 [default = 1.0];
-
-  // Dropout keep probability of the dbpedia representation.
-  optional float dbpedia_repr_dropout_keep_prob = 33 [default = 1.0];
 }
