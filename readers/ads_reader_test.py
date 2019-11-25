@@ -22,7 +22,7 @@ class AdsReaderTest(tf.test.TestCase):
       shuffle_buffer_size: 10
       map_num_parallel_calls: 5
       prefetch_buffer_size: 8000
-      batch_size: 1
+      batch_size: 10 
       max_slogan_num: 10
       max_slogan_len: 10
       knowledge_base_config {
@@ -32,6 +32,8 @@ class AdsReaderTest(tf.test.TestCase):
         max_comments_per_image: 15
         remove_query: false
       }
+      ads_keywords_file: 'configs/ads_keywords.vocab'
+      masking_keep_prob: 0.2
     """
     options = reader_pb2.AdsReader()
     text_format.Merge(options_str, options)
@@ -68,6 +70,9 @@ class AdsReaderTest(tf.test.TestCase):
         print(values['proposal_label_num'])
         print(values['proposal_label_text'])
         print(values['proposal_label_mask'])
+        print(values['groundtruth_num'])
+        print(values['groundtruth_text_string'])
+        print(values['groundtruth_text_length'])
 
   # def test_create_hash_table(self):
   #   tf.reset_default_graph()

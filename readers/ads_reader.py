@@ -211,6 +211,21 @@ def get_input_fn(options):
   if not isinstance(options, reader_pb2.AdsReader):
     raise ValueError('options has to be an instance of Reader.')
 
+  def _mask_fn(strings, keywords, keep_prob):
+    keywords = tf.expand_dims(tf.expand_dims(tf.constant(keywords), 0), 0)
+    not_equal_mask = tf.logical_not(
+        tf.reduce_any(tf.equal(tf.expand_dims(strings, axis=-1), keywords), -1))
+
+    masked_strings = tf.where(
+        not_equal_mask, strings,
+        tf.fill(dims=tf.shape(strings), value='[keyword]'))
+
+    indicator = tf.greater_equal(
+        tf.random_uniform(shape=[], minval=0.0, maxval=1.0), 1 - keep_prob)
+    strings = tf.cond(
+        indicator, true_fn=lambda: strings, false_fn=lambda: masked_strings)
+    return strings
+
   def _parse_fn(example):
     """Parses tf.Example proto.
 
@@ -316,6 +331,13 @@ def get_input_fn(options):
         max_string_num=options.max_statement_num,
         max_string_len=options.max_statement_len)
 
+    if options.masking_keep_prob < 1:
+      with open(options.ads_keywords_file, 'r') as f:
+        keywords = sorted(set([x.strip('\n').lower() for x in f.readlines()]))
+      feature_dict[InputDataFields.groundtruth_text_string] = _mask_fn(
+          feature_dict[InputDataFields.groundtruth_text_string], keywords,
+          options.masking_keep_prob)
+
     # Query knowlege base to expand slogans.
 
     knowledge_base = KnowledgeBase(options.knowledge_base_config)
@@ -346,8 +368,8 @@ def get_input_fn(options):
     if options.is_training:
       if options.cache == 'MEMORY':
         dataset = dataset.cache()
-      elif options.cache:
-        dataset = dataset.cache(filename=options.cache)
+      # elif options.cache:
+      #   dataset = dataset.cache(filename=options.cache)
     if options.is_training:
       dataset = dataset.repeat().shuffle(options.shuffle_buffer_size)
 

@@ -40,18 +40,12 @@ flags.DEFINE_string('topic_json_input_path',
 flags.DEFINE_string('topic_namelist_txt_input_path', 'raw_data/topics_list.txt',
                     'Path to the qa annotation.')
 
-#flags.DEFINE_string(
-#    'proposal_json_path', 'raw_data/ads_wsod.json/nmsed',
-#    'Path to the directory saving proposal annotations in json format.')
-#
-#flags.DEFINE_string(
-#    'slogan_json_path', 'raw_data/ocr.json/',
-#    'Path to the directory saving ocr annotations in json format.')
-
-flags.DEFINE_string('json_output_path', 'raw_data/visl.json',
-                    'Path to the output json path.')
+flags.DEFINE_string('json_output_path', '', 'Path to the output json path.')
 
 flags.DEFINE_string('prediction_output_path', 'results.json',
+                    'Path to the prediction results.')
+
+flags.DEFINE_string('side_prediction_output_path', 'side_results.json',
                     'Path to the prediction results.')
 
 flags.DEFINE_string('input_pattern', '', 'Path to the prediction results.')
@@ -59,13 +53,17 @@ flags.DEFINE_string('input_pattern', '', 'Path to the prediction results.')
 flags.DEFINE_string('metrics_output_format', 'csv',
                     'Format to output the metrics.')
 
+flags.DEFINE_string('dbpedia_annot_path', 'raw_data/dbpedia-annot.json',
+                    'Path to the DBpedia annotation file.')
+
 flags.DEFINE_bool('run_once', True, 'If true, run once.')
 
 flags.DEFINE_string('eval_log_dir', '', 'Path to the eval log dir.')
 
 flags.DEFINE_integer('max_steps', 0, 'Maximum training steps.')
 flags.DEFINE_integer('eval_min_steps', 3000, 'Maximum training steps.')
-flags.DEFINE_integer('number_of_eval_examples', 999999999999, 'Maximum training steps.')
+flags.DEFINE_integer('number_of_eval_examples', 999999999999,
+                     'Maximum training steps.')
 
 FLAGS = flags.FLAGS
 
@@ -73,6 +71,7 @@ _UNCLEAR = 'unclear'
 
 _FIELD_IMAGE_ID = 'image_id'
 _FIELD_IMAGE_IDS_GATHERED = 'image_ids_gathered'
+_FIELD_DBPEDIA_IDS = 'dbpedia_ids'
 _FIELD_SIMILARITY = 'similarity'
 _FIELD_ADJACENCY = 'adjacency'
 _FIELD_ADJACENCY_LOGITS = 'adjacency_logits'
@@ -228,6 +227,7 @@ def _update_metrics(groundtruth_list, prediction_list, topic, metrics):
 def _run_prediction(pipeline_proto,
                     topic_list,
                     topic_data,
+                    dbpedia_data,
                     checkpoint_path=None):
   """Runs the prediction.
 
@@ -235,7 +235,10 @@ def _run_prediction(pipeline_proto,
     pipeline_proto: an instance of pipeline_pb2.Pipeline.
   """
   results = {}
+  side_results = {}
   metrics = Metrics()
+
+  dbpedia_total = dbpedia_bingo = 0
 
   for example_index, example in enumerate(
       trainer.predict(pipeline_proto, checkpoint_path=checkpoint_path)):
@@ -287,7 +290,8 @@ def _run_prediction(pipeline_proto,
         slogan_kb_strings,
         slogan_kb_lengths,
     ) = (example[_FIELD_ADJACENCY][0], example[_FIELD_ADJACENCY_LOGITS][0],
-         example[_FIELD_SIMILARITY][0], example[InputDataFields.proposal_num][0],
+         example[_FIELD_SIMILARITY][0],
+         example[InputDataFields.proposal_num][0],
          example[InputDataFields.proposal_box][0],
          example[InputDataFields.proposal_text_string][0],
          example[InputDataFields.proposal_text_length][0],
@@ -301,44 +305,65 @@ def _run_prediction(pipeline_proto,
          example[InputDataFields.slogan_kb_text_string][0],
          example[InputDataFields.slogan_kb_text_length][0])
 
+    # Evaluate knowledge recall.
+
+    dbpedia_id = b'none'
+    if slogan_num > 0 and slogan_kb_num > 0:
+      kb_to_slogan = adjacency[
+          1 + proposal_num:1 + proposal_num + slogan_num, 1 + proposal_num +
+          slogan_num +
+          label_num:]  # kb_to_slogan shape = [slogan_num, dbpedia_num]
+      dbpedia_id = example[_FIELD_DBPEDIA_IDS][0][kb_to_slogan.max(0).argmax()]
+
+    side_results[str(image_id)] = dbpedia_id.decode('utf8')
+
+    if str(image_id) in dbpedia_data:
+      kblist = dbpedia_data[str(image_id)]
+      assert len(kblist) > 0, 'Empty kblist!'
+
+      dbpedia_total += 1
+      if dbpedia_id.decode('utf8') in kblist:
+        dbpedia_bingo += 1
+
     # Results for visualization.
 
-    with open(
-        os.path.join(FLAGS.json_output_path, '{}.json'.format(image_id)),
-        'w') as fid:
-      json_data = {
-          'image_id':
-          int(image_id),
-          'proposal_num':
-          int(proposal_num),
-          'proposal_boxes':
-          _boxes_to_json_array(proposal_box),
-          'proposal_labels':
-          _varlen_strings_to_json_array(proposal_strings, proposal_lengths),
-          'label_num':
-          int(label_num),
-          'label_text':
-          [x.decode('ascii') for x in label_text],
-          'slogan_num':
-          int(slogan_num),
-          'slogan_boxes':
-          _boxes_to_json_array(slogan_box),
-          'slogan_labels':
-          _varlen_strings_to_json_array(slogan_strings, slogan_lengths),
-          'slogan_kb_num':
-          int(slogan_kb_num),
-          'slogan_kb_labels':
-          _varlen_strings_to_json_array(slogan_kb_strings, slogan_kb_lengths),
-          'adjacency': [[round(float(x), 2) for x in row] for row in adjacency],
-          'adjacency_logits':
-          [[round(float(x), 2) for x in row] for row in adjacency_logits],
-          'predictions':
-          results[_revise_image_id(image_id)],
-          'annotations':
-          groundtruth_list
-      }
+    if FLAGS.json_output_path:
+      with open(
+          os.path.join(FLAGS.json_output_path, '{}.json'.format(image_id)),
+          'w') as fid:
+        json_data = {
+            'image_id':
+            int(image_id),
+            'proposal_num':
+            int(proposal_num),
+            'proposal_boxes':
+            _boxes_to_json_array(proposal_box),
+            'proposal_labels':
+            _varlen_strings_to_json_array(proposal_strings, proposal_lengths),
+            'label_num':
+            int(label_num),
+            'label_text': [x.decode('ascii') for x in label_text],
+            'slogan_num':
+            int(slogan_num),
+            'slogan_boxes':
+            _boxes_to_json_array(slogan_box),
+            'slogan_labels':
+            _varlen_strings_to_json_array(slogan_strings, slogan_lengths),
+            'slogan_kb_num':
+            int(slogan_kb_num),
+            'slogan_kb_labels':
+            _varlen_strings_to_json_array(slogan_kb_strings, slogan_kb_lengths),
+            'adjacency':
+            [[round(float(x), 2) for x in row] for row in adjacency],
+            'adjacency_logits':
+            [[round(float(x), 2) for x in row] for row in adjacency_logits],
+            'predictions':
+            results[_revise_image_id(image_id)],
+            'annotations':
+            groundtruth_list
+        }
 
-      fid.write(json.dumps(json_data, indent=2))
+        fid.write(json.dumps(json_data, indent=2))
 
   # Metrics.
 
@@ -360,10 +385,16 @@ def _run_prediction(pipeline_proto,
   tf.logging.info('minrank: product=%.3lf, psa=%.3lf', minrank_product,
                   minrank_psa)
 
+  dbpedia_recall_at_1 = 1.0 * dbpedia_bingo / dbpedia_total
+  tf.logging.info('dbpedia accuracy: %.4lf', dbpedia_recall_at_1)
+
   # Results to be submitted.
 
   with open(FLAGS.prediction_output_path, 'w') as fid:
     fid.write(json.dumps(results, indent=2))
+
+  with open(FLAGS.side_prediction_output_path, 'w') as fid:
+    fid.write(json.dumps(side_results, indent=2))
 
   # Test ids to be exported.
 
@@ -410,9 +441,13 @@ def main(_):
   topic_list, topic_data = _load_topics(FLAGS.topic_json_input_path,
                                         FLAGS.topic_namelist_txt_input_path)
 
+  with open(FLAGS.dbpedia_annot_path, 'r') as f:
+    dbpedia_data = json.load(f)
+
   if FLAGS.run_once:
 
-    results = _run_prediction(pipeline_proto, topic_list, topic_data)
+    results = _run_prediction(pipeline_proto, topic_list, topic_data,
+                              dbpedia_data)
     tf.logging.info('\n%s', json.dumps(results, indent=2))
 
   else:
@@ -424,7 +459,7 @@ def main(_):
         if global_step >= FLAGS.eval_min_steps:
           previous_ckpt = checkpoint_path
           metrics = _run_prediction(pipeline_proto, topic_list, topic_data,
-                                    checkpoint_path)
+                                    dbpedia_data, checkpoint_path)
 
           # Write summary.
 
@@ -436,8 +471,7 @@ def main(_):
             best_step, best_metric = save_model_if_it_is_better(
                 global_step, metrics['accuracy/micro'], checkpoint_path,
                 FLAGS.saved_ckpts_dir)
-            summary.value.add(
-                tag='accuracy/best', simple_value=best_metric)
+            summary.value.add(tag='accuracy/best', simple_value=best_metric)
 
           summary_writer = tf.summary.FileWriter(FLAGS.eval_log_dir)
           summary_writer.add_summary(summary, global_step=global_step)

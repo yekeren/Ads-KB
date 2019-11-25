@@ -22,6 +22,7 @@ slim = tf.contrib.slim
 
 _FIELD_IMAGE_ID = 'image_id'
 _FIELD_IMAGE_IDS_GATHERED = 'image_ids_gathered'
+_FIELD_DBPEDIA_IDS = 'dbpedia_ids'
 _FIELD_SIMILARITY = 'similarity'
 _FIELD_ADJACENCY = 'adjacency'
 _FIELD_ADJACENCY_LOGITS = 'adjacency_logits'
@@ -391,7 +392,7 @@ class Model(ModelBase):
     ################################################################
 
     (image_repr, adjacency,
-     adjacency_logits, slogan_values) = self._graph_creator.create_graph(
+     adjacency_logits) = self._graph_creator.create_graph(
          proposal_repr, slogan_repr, label_repr, dbpedia_repr, proposal_mask,
          slogan_mask, label_mask, label_proposal_mask, dbpedia_mask,
          dbpedia_slogan_mask)
@@ -417,18 +418,13 @@ class Model(ModelBase):
         is_training=is_training)
     similarity = tf.reduce_sum(dot_product, axis=-1)
 
-    # similarity = tf.matmul(
-    #     tf.nn.l2_normalize(image_repr, axis=-1),
-    #     tf.nn.l2_normalize(stmt_repr, axis=-1),
-    #     transpose_b=True)
-
     predictions.update({
         _FIELD_IMAGE_ID: image_id,
         _FIELD_IMAGE_IDS_GATHERED: image_ids_gathered,
+        _FIELD_DBPEDIA_IDS: dbpedia_ids,
         _FIELD_SIMILARITY: similarity,
         _FIELD_ADJACENCY: adjacency,
         _FIELD_ADJACENCY_LOGITS: adjacency_logits,
-        'slogan_values_diag': slogan_values,
     })
     return predictions
 

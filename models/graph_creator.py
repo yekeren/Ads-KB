@@ -317,6 +317,206 @@ class ConvGraphCreator(GraphCreator):
 
     return access_matrix
 
+  def _create_adjacency_matrix(self, proposal_to_sentinel, slogan_to_sentinel,
+                               proposal_to_proposal, slogan_to_slogan,
+                               label_to_proposal, dbpedia_to_slogan):
+    """Creates adjacency matrix based on the predicted weights.
+
+    Args:
+      proposal_to_sentinel: A [batch, 1, max_proposal_num] float tensor.
+      slogan_to_sentinel: A [batch, 1, max_slogan_num] float tensor.
+      proposal_to_proposal: A [batch, max_proposal_num, max_proposal_num] 
+        float tensor.
+      slogan_to_slogan: A [batch, max_slogan_num, max_slogan_num] float tensor.
+      dbpedia_to_slogan: A [batch, max_slogan_num, max_dbpedia_num] tensor.
+
+    Returns:
+      adjacency matrix of shape [batch, max_node_num, max_node_num].
+    """
+    (batch_i, max_proposal_num, max_slogan_num, max_label_num,
+     max_dbpedia_num) = (proposal_to_sentinel.get_shape()[0].value,
+                         utils.get_tensor_shape(proposal_to_sentinel)[2],
+                         utils.get_tensor_shape(slogan_to_sentinel)[2],
+                         utils.get_tensor_shape(label_to_proposal)[2],
+                         utils.get_tensor_shape(dbpedia_to_slogan)[2])
+
+    with tf.name_scope('create_adjacency_matrix'):
+      node_to_node = []
+      node_to_node.append([
+          tf.zeros([batch_i, 1, 1]),
+          proposal_to_sentinel,
+          slogan_to_sentinel,
+          tf.zeros([batch_i, 1, max_label_num]),
+          tf.zeros([batch_i, 1, max_dbpedia_num]),
+      ])
+      node_to_node.append([
+          tf.zeros([batch_i, max_proposal_num, 1]),
+          proposal_to_proposal,
+          tf.zeros([batch_i, max_proposal_num, max_slogan_num]),
+          label_to_proposal,
+          tf.zeros([batch_i, max_proposal_num, max_dbpedia_num]),
+      ])
+      node_to_node.append([
+          tf.zeros([batch_i, max_slogan_num, 1]),
+          tf.zeros([batch_i, max_slogan_num, max_proposal_num]),
+          slogan_to_slogan,
+          tf.zeros([batch_i, max_slogan_num, max_label_num]),
+          dbpedia_to_slogan,
+      ])
+      node_to_node.append([
+          tf.zeros([batch_i, max_label_num, 1]),
+          tf.zeros([batch_i, max_label_num, max_proposal_num]),
+          tf.zeros([batch_i, max_label_num, max_slogan_num]),
+          tf.zeros([batch_i, max_label_num, max_label_num]),
+          tf.zeros([batch_i, max_label_num, max_dbpedia_num]),
+      ])
+      node_to_node.append([
+          tf.zeros([batch_i, max_dbpedia_num, 1]),
+          tf.zeros([batch_i, max_dbpedia_num, max_proposal_num]),
+          tf.zeros([batch_i, max_dbpedia_num, max_slogan_num]),
+          tf.zeros([batch_i, max_dbpedia_num, max_label_num]),
+          tf.zeros([batch_i, max_dbpedia_num, max_dbpedia_num]),
+      ])
+      node_to_node = _concat_batch_2d_tensors(node_to_node)
+    return node_to_node
+
+  def create_graph(self, proposal_repr, slogan_repr, label_repr, dbpedia_repr,
+                   proposal_mask, slogan_mask, label_mask, label_to_slogan_mask,
+                   dbpedia_mask, dbpedia_to_slogan_mask):
+    """Creates graph."""
+    options = self._options
+    is_training = self._is_training
+
+    (batch_i, embedding_dims, max_proposal_num, max_label_num, max_slogan_num,
+     max_dbpedia_num) = (proposal_repr.get_shape()[0].value,
+                         proposal_repr.get_shape()[-1].value,
+                         utils.get_tensor_shape(proposal_repr)[1],
+                         utils.get_tensor_shape(label_repr)[1],
+                         utils.get_tensor_shape(slogan_repr)[1],
+                         utils.get_tensor_shape(dbpedia_repr)[1])
+    # Create access matrix.
+
+    access_matrix = self._create_access_matrix(
+        max_proposal_num, max_slogan_num, max_label_num, label_to_slogan_mask,
+        max_dbpedia_num, dbpedia_to_slogan_mask, batch_i)
+    tf.summary.histogram('histogram/access_matrix', access_matrix)
+
+    # Get the graph predictions.
+
+    sentinel_mask = tf.ones([batch_i, 1])
+    sentinel_repr = tf.zeros([batch_i, 1, proposal_repr.get_shape()[-1].value])
+
+    # Build adjacency matrix.
+
+    node_to_node = self._create_adjacency_matrix(
+        proposal_to_sentinel=self._create_edge_weights_helper(
+            sentinel_repr, proposal_repr, 'proposal_to_sentinel'),
+        slogan_to_sentinel=self._create_edge_weights_helper(
+            sentinel_repr, slogan_repr, 'slogan_to_sentinel'),
+        proposal_to_proposal=self._create_edge_weights_helper(
+            proposal_repr, proposal_repr, 'proposal_to_proposal'),
+        slogan_to_slogan=self._create_edge_weights_helper(
+            slogan_repr, slogan_repr, 'slogan_to_slogan'),
+        label_to_proposal=self._create_edge_weights_helper(
+            proposal_repr, label_repr, 'label_to_proposal'),
+        dbpedia_to_slogan=self._create_edge_weights_helper(
+            slogan_repr, dbpedia_repr, 'dbpedia_to_slogan'))
+
+    tf.summary.histogram('histogram/adjacency_logits', node_to_node)
+
+    node_mask = tf.concat(
+        [sentinel_mask, proposal_mask, slogan_mask, label_mask, dbpedia_mask],
+        axis=1)
+    node_repr = tf.concat(
+        [sentinel_repr, proposal_repr, slogan_repr, label_repr, dbpedia_repr], axis=1)
+
+    adjacency = utils.masked_softmax(
+        node_to_node,
+        mask=access_matrix * tf.expand_dims(node_mask, axis=1),
+        dim=-1)
+    adjacency = tf.multiply(
+        adjacency,
+        tf.multiply(tf.expand_dims(node_mask, 1), tf.expand_dims(node_mask, 2)))
+
+    for _ in range(2):
+      node_repr = tf.matmul(adjacency, node_repr)
+
+    image_repr = node_repr[:, 0, :]
+
+    return image_repr, adjacency, node_to_node
+
+
+class HierarchicalGraphCreator(ConvGraphCreator):
+  """HierarchicalGraphCreator."""
+
+  def __init__(self, options, is_training):
+    """Initializes the graph creator."""
+    super(HierarchicalGraphCreator, self).__init__(options, is_training)
+
+  def _create_lv1_edge_scores(self, proposal_repr, slogan_repr, proposal_mask,
+                              slogan_mask):
+    """Creates adjacency matrix. Each elem denotes an edge weight.
+
+    Args:
+      proposal_repr: A [batch, max_proposal_num, dims] float tensor.
+      slogan_repr: A [batch, max_slogan_num, dims] float tensor.
+
+    Returns:
+      proposal_scores: A [batch, max_proposal_num] float tensor denoting
+        weights of different proposals.
+      slogan_scores: A [batch, max_slogan_num] float tensor denoting weights
+        of different slogans.
+    """
+    options = self._options
+    is_training = self._is_training
+
+    with tf.name_scope('create_attention_weights'):
+
+      if options.attention_type == graph_creator_pb2.ConvGraphCreator.CO_ATTENTION:
+
+        # Use co-attention to determine edge importance.
+        #   slogan_to_proposal_scores shape = [batch, max_proposal_num, max_slogan_num].
+        #   proposal_scores shape = [batch, max_proposal_num]
+        #   slogan_scores shape = [batch,  max_slogan_num]
+        slogan_to_proposal_scores = self._create_edge_weights_helper(
+            proposal_repr, slogan_repr, scope='slogan_to_proposal_scores')
+        proposal_scores = utils.masked_avg(
+            slogan_to_proposal_scores,
+            mask=tf.expand_dims(slogan_mask, 1),
+            dim=2)
+        proposal_scores = tf.squeeze(proposal_scores, axis=-1)
+        slogan_scores = utils.masked_avg(
+            slogan_to_proposal_scores,
+            mask=tf.expand_dims(proposal_mask, 2),
+            dim=1)
+        slogan_scores = tf.squeeze(slogan_scores, axis=1)
+
+      elif options.attention_type == graph_creator_pb2.ConvGraphCreator.SELF_ATTENTION:
+
+        # Use self-attention to determine edge importance.
+        #   similarity_proposal_proposal shape = [batch, max_proposal_num, max_proposal_num]
+        #   similarity_slogan_slogan shape = [batch, max_slogan_num, max_slogan_num]
+        #   proposal_scores shape = [batch, 1, max_proposal_num]
+        #   slogan_scores shape = [batch, 1, max_slogan_num]
+
+        similarity_proposal_proposal = self._create_edge_weights_helper(
+            proposal_repr, proposal_repr, scope='similarity_proposal_proposal')
+        similarity_slogan_slogan = self._create_edge_weights_helper(
+            slogan_repr, slogan_repr, scope='similarity_slogan_slogan')
+        proposal_scores = utils.masked_avg(
+            similarity_proposal_proposal,
+            tf.expand_dims(proposal_mask, 2),
+            dim=1)
+        proposal_scores = tf.squeeze(proposal_scores, axis=1)
+        slogan_scores = utils.masked_avg(
+            similarity_slogan_slogan, tf.expand_dims(slogan_mask, 2), dim=1)
+        slogan_scores = tf.squeeze(slogan_scores, axis=1)
+
+      else:
+        raise ValueError('Invalid attention type %s' % options.attention_type)
+
+    return proposal_scores, slogan_scores
+
   def _create_lv0_edge_scores(self, proposal_repr, slogan_repr, label_repr,
                               dbpedia_repr, proposal_mask, slogan_mask,
                               label_mask, dbpedia_mask):
@@ -422,203 +622,6 @@ class ConvGraphCreator(GraphCreator):
 
       return proposal_scores, slogan_scores, label_to_proposal_scores, dbpedia_to_slogan_scores
 
-  def _create_lv1_edge_scores(self, proposal_repr, slogan_repr, proposal_mask,
-                              slogan_mask):
-    """Creates adjacency matrix. Each elem denotes an edge weight.
-
-    Args:
-      proposal_repr: A [batch, max_proposal_num, dims] float tensor.
-      slogan_repr: A [batch, max_slogan_num, dims] float tensor.
-
-    Returns:
-      proposal_scores: A [batch, max_proposal_num] float tensor denoting
-        weights of different proposals.
-      slogan_scores: A [batch, max_slogan_num] float tensor denoting weights
-        of different slogans.
-    """
-    options = self._options
-    is_training = self._is_training
-
-    with tf.name_scope('create_attention_weights'):
-
-      if options.attention_type == graph_creator_pb2.ConvGraphCreator.CO_ATTENTION:
-
-        # Use co-attention to determine edge importance.
-        #   slogan_to_proposal_scores shape = [batch, max_proposal_num, max_slogan_num].
-        #   proposal_scores shape = [batch, max_proposal_num]
-        #   slogan_scores shape = [batch,  max_slogan_num]
-        slogan_to_proposal_scores = self._create_edge_weights_helper(
-            proposal_repr, slogan_repr, scope='slogan_to_proposal_scores')
-        proposal_scores = utils.masked_avg(
-            slogan_to_proposal_scores,
-            mask=tf.expand_dims(slogan_mask, 1),
-            dim=2)
-        proposal_scores = tf.squeeze(proposal_scores, axis=-1)
-        slogan_scores = utils.masked_avg(
-            slogan_to_proposal_scores,
-            mask=tf.expand_dims(proposal_mask, 2),
-            dim=1)
-        slogan_scores = tf.squeeze(slogan_scores, axis=1)
-
-      elif options.attention_type == graph_creator_pb2.ConvGraphCreator.SELF_ATTENTION:
-
-        # Use self-attention to determine edge importance.
-        #   similarity_proposal_proposal shape = [batch, max_proposal_num, max_proposal_num]
-        #   similarity_slogan_slogan shape = [batch, max_slogan_num, max_slogan_num]
-        #   proposal_scores shape = [batch, 1, max_proposal_num]
-        #   slogan_scores shape = [batch, 1, max_slogan_num]
-
-        similarity_proposal_proposal = self._create_edge_weights_helper(
-            proposal_repr, proposal_repr, scope='similarity_proposal_proposal')
-        similarity_slogan_slogan = self._create_edge_weights_helper(
-            slogan_repr, slogan_repr, scope='similarity_slogan_slogan')
-        proposal_scores = utils.masked_avg(
-            similarity_proposal_proposal,
-            tf.expand_dims(proposal_mask, 2),
-            dim=1)
-        proposal_scores = tf.squeeze(proposal_scores, axis=1)
-        slogan_scores = utils.masked_avg(
-            similarity_slogan_slogan, tf.expand_dims(slogan_mask, 2), dim=1)
-        slogan_scores = tf.squeeze(slogan_scores, axis=1)
-
-      else:
-        raise ValueError('Invalid attention type %s' % options.attention_type)
-
-    return proposal_scores, slogan_scores
-
-  def _create_adjacency_matrix(self, proposal_to_sentinel, slogan_to_sentinel,
-                               proposal_to_proposal, slogan_to_slogan,
-                               label_to_proposal, dbpedia_to_slogan):
-    """Creates adjacency matrix based on the predicted weights.
-
-    Args:
-      proposal_to_sentinel: A [batch, 1, max_proposal_num] float tensor.
-      slogan_to_sentinel: A [batch, 1, max_slogan_num] float tensor.
-      proposal_to_proposal: A [batch, max_proposal_num, max_proposal_num] 
-        float tensor.
-      slogan_to_slogan: A [batch, max_slogan_num, max_slogan_num] float tensor.
-      dbpedia_to_slogan: A [batch, max_slogan_num, max_dbpedia_num] tensor.
-
-    Returns:
-      adjacency matrix of shape [batch, max_node_num, max_node_num].
-    """
-    (batch_i, max_proposal_num, max_slogan_num, max_label_num,
-     max_dbpedia_num) = (proposal_to_sentinel.get_shape()[0].value,
-                         utils.get_tensor_shape(proposal_to_sentinel)[2],
-                         utils.get_tensor_shape(slogan_to_sentinel)[2],
-                         utils.get_tensor_shape(label_to_proposal)[2],
-                         utils.get_tensor_shape(dbpedia_to_slogan)[2])
-
-    with tf.name_scope('create_adjacency_matrix'):
-      node_to_node = []
-      node_to_node.append([
-          tf.zeros([batch_i, 1, 1]),
-          proposal_to_sentinel,
-          slogan_to_sentinel,
-          tf.zeros([batch_i, 1, max_label_num]),
-          tf.zeros([batch_i, 1, max_dbpedia_num]),
-      ])
-      node_to_node.append([
-          tf.zeros([batch_i, max_proposal_num, 1]),
-          proposal_to_proposal,
-          tf.zeros([batch_i, max_proposal_num, max_slogan_num]),
-          label_to_proposal,
-          tf.zeros([batch_i, max_proposal_num, max_dbpedia_num]),
-      ])
-      node_to_node.append([
-          tf.zeros([batch_i, max_slogan_num, 1]),
-          tf.zeros([batch_i, max_slogan_num, max_proposal_num]),
-          slogan_to_slogan,
-          tf.zeros([batch_i, max_slogan_num, max_label_num]),
-          dbpedia_to_slogan,
-      ])
-      node_to_node.append([
-          tf.zeros([batch_i, max_label_num, 1]),
-          tf.zeros([batch_i, max_label_num, max_proposal_num]),
-          tf.zeros([batch_i, max_label_num, max_slogan_num]),
-          tf.zeros([batch_i, max_label_num, max_label_num]),
-          tf.zeros([batch_i, max_label_num, max_dbpedia_num]),
-      ])
-      node_to_node.append([
-          tf.zeros([batch_i, max_dbpedia_num, 1]),
-          tf.zeros([batch_i, max_dbpedia_num, max_proposal_num]),
-          tf.zeros([batch_i, max_dbpedia_num, max_slogan_num]),
-          tf.zeros([batch_i, max_dbpedia_num, max_label_num]),
-          tf.zeros([batch_i, max_dbpedia_num, max_dbpedia_num]),
-      ])
-      node_to_node = _concat_batch_2d_tensors(node_to_node)
-    return node_to_node
-
-  def create_graph(self, proposal_repr, label_repr, slogan_repr, dbpedia_repr,
-                   proposal_mask, label_mask, label_to_proposal_mask,
-                   slogan_mask, dbpedia_mask, dbpedia_to_slogan_mask):
-    """Creates graph."""
-    options = self._options
-    is_training = self._is_training
-
-    (batch_i, max_proposal_num, max_slogan_num,
-     max_dbpedia_num) = (proposal_repr.get_shape()[0].value,
-                         utils.get_tensor_shape(proposal_repr)[1],
-                         utils.get_tensor_shape(slogan_repr)[1],
-                         utils.get_tensor_shape(dbpedia_repr)[1])
-
-    # Create access matrix.
-
-    access_matrix = self._create_access_matrix(max_proposal_num, max_slogan_num,
-                                               max_dbpedia_num,
-                                               dbpedia_to_slogan_mask, batch_i)
-    tf.summary.histogram('histogram/access_matrix', access_matrix)
-
-    # Get the graph predictions.
-
-    (proposal_scores, slogan_scores) = self._create_lv1_edge_scores(
-        proposal_repr, slogan_repr, proposal_mask, slogan_mask)
-
-    dbpedia_to_slogan_scores = self._create_edge_weights_helper(
-        slogan_repr, dbpedia_repr, 'dbpedia_to_slogan')
-
-    # Build adjacency matrix.
-
-    node_to_node = self._create_adjacency_matrix(
-        proposal_to_sentinel=tf.expand_dims(proposal_scores, 1),
-        slogan_to_sentinel=tf.expand_dims(slogan_scores, 1),
-        proposal_to_proposal=tf.linalg.diag(proposal_scores),
-        slogan_to_slogan=tf.linalg.diag(slogan_scores),
-        dbpedia_to_slogan=dbpedia_to_slogan_scores)
-
-    tf.summary.histogram('histogram/adjacency_logits', node_to_node)
-
-    sentinel_mask = tf.ones([batch_i, 1])
-    sentinel_repr = tf.zeros([batch_i, 1, proposal_repr.get_shape()[-1].value])
-
-    node_mask = tf.concat(
-        [sentinel_mask, proposal_mask, slogan_mask, dbpedia_mask], axis=1)
-    node_repr = tf.concat(
-        [sentinel_repr, proposal_repr, slogan_repr, dbpedia_repr], axis=1)
-
-    adjacency = utils.masked_softmax(
-        node_to_node,
-        mask=access_matrix * tf.expand_dims(node_mask, axis=1),
-        dim=-1)
-    adjacency = tf.multiply(
-        adjacency,
-        tf.multiply(tf.expand_dims(node_mask, 1), tf.expand_dims(node_mask, 2)))
-
-    for _ in range(2):
-      node_repr = tf.matmul(adjacency, node_repr)
-
-    image_repr = node_repr[:, 0, :]
-
-    return image_repr, adjacency, node_to_node
-
-
-class HierarchicalGraphCreator(ConvGraphCreator):
-  """HierarchicalGraphCreator."""
-
-  def __init__(self, options, is_training):
-    """Initializes the graph creator."""
-    super(HierarchicalGraphCreator, self).__init__(options, is_training)
-
   def create_graph(self, proposal_repr, slogan_repr, label_repr, dbpedia_repr,
                    proposal_mask, slogan_mask, label_mask, label_to_slogan_mask,
                    dbpedia_mask, dbpedia_to_slogan_mask):
@@ -644,7 +647,8 @@ class HierarchicalGraphCreator(ConvGraphCreator):
     sentinel_mask = tf.ones([batch_i, 1])
     sentinel_repr = tf.zeros([batch_i, 1, proposal_repr.get_shape()[-1].value])
     node_mask = tf.concat(
-        [sentinel_mask, proposal_mask, slogan_mask, label_mask, dbpedia_mask], axis=1)
+        [sentinel_mask, proposal_mask, slogan_mask, label_mask, dbpedia_mask],
+        axis=1)
 
     # Layer level-0 inference.
 
@@ -677,7 +681,8 @@ class HierarchicalGraphCreator(ConvGraphCreator):
               tf.expand_dims(node_mask, 1), tf.expand_dims(node_mask, 2)))
 
       node_repr = tf.concat(
-          [sentinel_repr, proposal_repr, slogan_repr, label_repr, dbpedia_repr], axis=1)
+          [sentinel_repr, proposal_repr, slogan_repr, label_repr, dbpedia_repr],
+          axis=1)
       node_repr = tf.matmul(adjacency, node_repr)
 
     # Layer level-1 inference.
@@ -720,7 +725,8 @@ class HierarchicalGraphCreator(ConvGraphCreator):
               tf.expand_dims(node_mask, 1), tf.expand_dims(node_mask, 2)))
 
       node_repr = tf.concat(
-          [sentinel_repr, proposal_repr, slogan_repr, label_repr, dbpedia_repr], axis=1)
+          [sentinel_repr, proposal_repr, slogan_repr, label_repr, dbpedia_repr],
+          axis=1)
       node_repr = tf.matmul(adjacency, node_repr)
 
     tf.summary.histogram('histogram/adjacency_logits', node_to_node)
@@ -743,7 +749,7 @@ class HierarchicalGraphCreator(ConvGraphCreator):
               sparse_loss, options.sparse_loss_weight, name='sparse_loss'))
 
     image_repr = node_repr[:, 0, :]
-    return image_repr, adjacency, node_to_node, slogan_values
+    return image_repr, adjacency, node_to_node
 
 
 def build_graph_creator(config, is_training):
